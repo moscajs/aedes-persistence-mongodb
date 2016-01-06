@@ -1,0 +1,40 @@
+{
+  "name": "aedes-persistence-mongodb",
+  "version": "0.0.1",
+  "description": "MongoDB persistence for Aedes ",
+  "main": "persistence.js",
+  "scripts": {
+    "test": "standard && tape test.js | faucet"
+  },
+  "precommit": "test",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mcollina/aedes-persistence-mongodb.git"
+  },
+  "keywords": [
+    "Aedes",
+    "MQTT",
+    "broker",
+    "mosca",
+    "persistence",
+    "mongodb"
+  ],
+  "author": "Matteo Collina <hello@matteocollina.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/mcollina/aedes-persistence-mongodb/issues"
+  },
+  "homepage": "https://github.com/mcollina/aedes-persistence-mongodb#readme",
+  "devDependencies": {
+    "aedes-persistence": "^1.0.2",
+    "faucet": "0.0.1",
+    "mongo-clean": "^1.1.0",
+    "pre-commit": "^1.1.2",
+    "standard": "^5.4.1",
+    "tape": "^4.4.0"
+  },
+  "dependencies": {
+    "mongojs": "^2.2.2",
+    "through2": "^2.0.0"
+  }
+}
