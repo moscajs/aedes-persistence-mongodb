@@ -26,15 +26,20 @@
   },
   "homepage": "https://github.com/mcollina/aedes-persistence-mongodb#readme",
   "devDependencies": {
-    "aedes-persistence": "^1.0.2",
+    "concat-stream": "^1.5.1",
     "faucet": "0.0.1",
     "mongo-clean": "^1.1.0",
+    "mongodb": "^2.1.7",
+    "mqemitter-mongodb": "^1.0.0",
     "pre-commit": "^1.1.2",
     "standard": "^5.4.1",
     "tape": "^4.4.0"
   },
   "dependencies": {
+    "aedes-cached-persistence": "^1.0.0",
     "mongojs": "^2.2.2",
-    "through2": "^2.0.0"
+    "pump": "^1.0.1",
+    "qlobber": "^0.5.3",
+    "through2": "^2.0.1"
   }
 }
