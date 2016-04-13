@@ -19,7 +19,8 @@ function MongoPersistence (opts) {
   }
 
   this._db = mongojs(opts.url, [
-    'retained'
+    'retained',
+    'subscriptions'
   ])
 
   CachedPersistence.call(this, opts)
@@ -32,7 +33,12 @@ MongoPersistence.prototype._setup = function () {
 }
 
 MongoPersistence.prototype.storeRetained = function (packet, cb) {
-  this._db.retained.insert(packet, cb)
+  var criteria = { topic: packet.topic }
+  if (packet.payload.length > 0) {
+    this._db.retained.update(criteria, packet, { upsert: true }, cb)
+  } else {
+    this._db.retained.remove(criteria, cb)
+  }
 }
 
 function filterStream (pattern) {
@@ -45,6 +51,10 @@ function filterStream (pattern) {
 function filterPattern (chunk, enc, cb) {
   if (this.matcher.match(chunk.topic).length > 0) {
     chunk.payload = chunk.payload.buffer
+    // this is converting chunk to slow properties
+    // https://github.com/sindresorhus/to-fast-properties
+    // might make this faster
+    delete chunk._id
     this.push(chunk)
   }
   cb()
@@ -59,9 +69,19 @@ MongoPersistence.prototype.createRetainedStream = function (pattern) {
   )
 }
 
-function RetainedPacket (original) {
-  this.cmd = original.cmd
-  this.id = original.cmd
+MongoPersistence.prototype.addSubscriptions = function (client, subs, cb) {
 }
+
+MongoPersistence.prototype.destroy = function (cb) {
+  cb = cb || noop
+  if (!this._db) {
+    cb()
+    return
+  }
+
+  this._db.close(cb)
+}
+
+function noop () {}
 
 module.exports = MongoPersistence

@@ -16,19 +16,35 @@ clean(mongourl, function (err, db) {
     url: mongourl
   }
 
+  var lastEmitter = null
+
+  db.close()
+
   abs({
     test: test,
     buildEmitter: function () {
       var emitter = mqemitterMongo(dbopts)
+      lastEmitter = emitter
       return emitter
     },
     persistence: function build (cb) {
-      clean(db, function (err) {
+      clean(mongourl, { exclude: ['pubsub'] }, function (err, db) {
         if (err) {
           return cb(err)
         }
+        db.close()
 
-        cb(null, persistence(dbopts))
+        var instance = persistence(dbopts)
+
+        var oldDestroy = instance.destroy
+
+        instance.destroy = function (cb) {
+          oldDestroy.call(this, function () {
+            lastEmitter.close(cb)
+          })
+        }
+
+        cb(null, instance)
       })
     }
   })
@@ -73,4 +89,3 @@ clean(mongourl, function (err, db) {
     })
   })
 })
-
