@@ -7,7 +7,7 @@ var mqemitterMongo = require('mqemitter-mongodb')
 var clean = require('mongo-clean')
 var mongourl = 'mongodb://127.0.0.1/aedes-test'
 
-clean(mongourl, function (err, db) {
+clean(mongourl, { exclude: ['pubsub'] }, function (err, db) {
   if (err) {
     throw err
   }
