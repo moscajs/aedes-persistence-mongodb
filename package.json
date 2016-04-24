@@ -28,7 +28,7 @@
   "devDependencies": {
     "concat-stream": "^1.5.1",
     "faucet": "0.0.1",
-    "mongo-clean": "^2.1.0",
+    "mongo-clean": "^1.1.0",
     "mongodb": "^2.1.9",
     "mqemitter-mongodb": "^1.1.0",
     "pre-commit": "^1.1.2",
