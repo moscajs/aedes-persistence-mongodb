@@ -49,14 +49,31 @@ clean(mongourl, { exclude: ['pubsub'] }, function (err, db) {
     }
   })
 
-  test('multiple persistences', function (t) {
-    t.plan(6)
+  function toBroker (id, emitter) {
+    return {
+      id: id,
+      publish: emitter.emit.bind(emitter),
+      subscribe: emitter.on.bind(emitter),
+      unsubscribe: emitter.removeListener.bind(emitter)
+    }
+  }
 
-    clean(db, function (err) {
+  test('multiple persistences', function (t) {
+    t.plan(8)
+
+    clean(mongourl, function (err, db) {
       t.error(err)
+      db.close()
+
+      var emitter = mqemitterMongo(dbopts)
+      var emitter2 = mqemitterMongo(dbopts)
 
       var instance = persistence(dbopts)
       var instance2 = persistence(dbopts)
+
+      instance.broker = toBroker('1', emitter)
+      instance2.broker = toBroker('2', emitter2)
+
       var client = { id: 'abcde' }
       var subs = [{
         topic: 'hello',
@@ -84,6 +101,8 @@ clean(mongourl, { exclude: ['pubsub'] }, function (err, db) {
           }])
           instance.destroy(t.pass.bind(t, 'first dies'))
           instance2.destroy(t.pass.bind(t, 'second dies'))
+          emitter.close(t.pass.bind(t, 'first emitter dies'))
+          emitter2.close(t.pass.bind(t, 'second emitter dies'))
         })
       })
     })
