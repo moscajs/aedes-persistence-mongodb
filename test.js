@@ -88,22 +88,26 @@ clean(mongourl, { exclude: ['pubsub'] }, function (err, db) {
 
       instance.addSubscriptions(client, subs, function (err) {
         t.notOk(err, 'no error')
-        instance2.subscriptionsByTopic('hello', function (err, resubs) {
-          t.notOk(err, 'no error')
-          t.deepEqual(resubs, [{
-            clientId: client.id,
-            topic: 'hello/#',
-            qos: 1
-          }, {
-            clientId: client.id,
-            topic: 'hello',
-            qos: 1
-          }])
-          instance.destroy(t.pass.bind(t, 'first dies'))
-          instance2.destroy(t.pass.bind(t, 'second dies'))
-          emitter.close(t.pass.bind(t, 'first emitter dies'))
-          emitter2.close(t.pass.bind(t, 'second emitter dies'))
-        })
+        // timeout needed because of mongodb latency
+        // TODO remove
+        setTimeout(function () {
+          instance2.subscriptionsByTopic('hello', function (err, resubs) {
+            t.notOk(err, 'no error')
+            t.deepEqual(resubs, [{
+              clientId: client.id,
+              topic: 'hello/#',
+              qos: 1
+            }, {
+              clientId: client.id,
+              topic: 'hello',
+              qos: 1
+            }])
+            instance.destroy(t.pass.bind(t, 'first dies'))
+            instance2.destroy(t.pass.bind(t, 'second dies'))
+            emitter.close(t.pass.bind(t, 'first emitter dies'))
+            emitter2.close(t.pass.bind(t, 'second emitter dies'))
+          })
+        }, 200)
       })
     })
   })

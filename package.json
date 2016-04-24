@@ -37,7 +37,7 @@
   },
   "dependencies": {
     "aedes-cached-persistence": "^1.0.0",
-    "mongojs": "^2.2.2",
+    "mongojs": "^2.3.0",
     "pump": "^1.0.1",
     "qlobber": "^0.5.3",
     "through2": "^2.0.1"
