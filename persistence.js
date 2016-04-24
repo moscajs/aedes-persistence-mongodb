@@ -220,13 +220,17 @@ MongoPersistence.prototype.countOffline = function (cb) {
 }
 
 MongoPersistence.prototype.destroy = function (cb) {
-  cb = cb || noop
-  if (!this._db) {
-    cb()
+  if (!this.ready) {
+    this.once('ready', this.destroy.bind(this, cb))
     return
   }
 
-  this._db.close(cb)
+  cb = cb || noop
+
+  this._db.close(true, function () {
+    // swallow err in case of close
+    cb()
+  })
 }
 
 MongoPersistence.prototype.outgoingEnqueue = function (sub, packet, cb) {
