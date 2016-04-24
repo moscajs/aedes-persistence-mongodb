@@ -4,5 +4,9 @@ node_js:
   - "0.12"
   - "4"
   - "5"
-service:
-  - mongodb
+addons:
+  apt:
+    sources:
+      - mongodb-3.2-precise
+    packages:
+      - mongodb
