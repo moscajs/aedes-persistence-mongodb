@@ -32,7 +32,21 @@ function MongoPersistence (opts) {
 util.inherits(MongoPersistence, CachedPersistence)
 
 MongoPersistence.prototype._setup = function () {
-  this.emit('ready')
+  if (this.ready) {
+    return
+  }
+
+  var that = this
+
+  this._db.subscriptions.find({
+    qos: { $gt: 0 }
+  }).on('data', function (chunk) {
+    that._matcher.add(chunk.topic, chunk)
+  }).on('end', function () {
+    that.emit('ready')
+  }).on('error', function (err) {
+    that.emit('error', err)
+  })
 }
 
 MongoPersistence.prototype.storeRetained = function (packet, cb) {
@@ -73,6 +87,11 @@ MongoPersistence.prototype.createRetainedStream = function (pattern) {
 }
 
 MongoPersistence.prototype.addSubscriptions = function (client, subs, cb) {
+  if (!this.ready) {
+    this.once('ready', this.addSubscriptions.bind(this, client, subs, cb))
+    return
+  }
+
   var published = 0
   var count = 0
   var errored = false
@@ -94,9 +113,10 @@ MongoPersistence.prototype.addSubscriptions = function (client, subs, cb) {
       })
     })
 
-  bulk.execute(finish)
-
-  this._addedSubscriptions(client, subs, finish)
+  this._addedSubscriptions(client, subs, function (err) {
+    finish(err)
+    bulk.execute(finish)
+  })
 
   function finish (err) {
     if (err && !errored) {
@@ -107,7 +127,6 @@ MongoPersistence.prototype.addSubscriptions = function (client, subs, cb) {
       return
     }
     published++
-    console.log(published, count)
     if (published === count + 2) {
       cb(null, client)
     }
@@ -121,6 +140,11 @@ function toSub (topic) {
 }
 
 MongoPersistence.prototype.removeSubscriptions = function (client, subs, cb) {
+  if (!this.ready) {
+    this.once('ready', this.removeSubscriptions.bind(this, subs, cb))
+    return
+  }
+
   var published = 0
   var count = 0
   var errored = false
@@ -153,6 +177,11 @@ MongoPersistence.prototype.removeSubscriptions = function (client, subs, cb) {
 }
 
 MongoPersistence.prototype.subscriptionsByClient = function (client, cb) {
+  if (!this.ready) {
+    this.once('ready', this.subscriptionsByClient.bind(this, client, cb))
+    return
+  }
+
   this._db.subscriptions.find({ clientId: client.id }).toArray(function (err, subs) {
     if (err) {
       cb(err)
@@ -224,11 +253,11 @@ MongoPersistence.prototype.outgoingStream = function (client) {
 function updateWithMessageId (db, client, packet, cb) {
   db.outgoing.update({
     clientId: client.id,
-    "packet.brokerCounter": packet.brokerCounter,
-    "packet.brokerId": packet.brokerId
+    'packet.brokerCounter': packet.brokerCounter,
+    'packet.brokerId': packet.brokerId
   }, {
     $set: {
-      "packet.messageId": packet.messageId
+      'packet.messageId': packet.messageId
     }
   }, function (err) {
     cb(err, client, packet)
@@ -238,7 +267,7 @@ function updateWithMessageId (db, client, packet, cb) {
 function updatePacket (db, client, packet, cb) {
   db.outgoing.update({
     clientId: client.id,
-    "packet.messageId": packet.messageId
+    'packet.messageId': packet.messageId
   }, {
     clientId: client.id,
     packet: packet
@@ -248,7 +277,6 @@ function updatePacket (db, client, packet, cb) {
 }
 
 MongoPersistence.prototype.outgoingUpdate = function (client, packet, cb) {
-  var that = this
   if (packet.brokerId) {
     updateWithMessageId(this._db, client, packet, cb)
   } else {
@@ -259,7 +287,7 @@ MongoPersistence.prototype.outgoingUpdate = function (client, packet, cb) {
 MongoPersistence.prototype.outgoingClearMessageId = function (client, packet, cb) {
   this._db.outgoing.remove({
     clientId: client.id,
-    "packet.messageId": packet.messageId
+    'packet.messageId': packet.messageId
   }, function (err) {
     cb(err, client)
   })

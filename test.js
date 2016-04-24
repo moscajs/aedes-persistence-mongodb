@@ -12,13 +12,22 @@ clean(mongourl, { exclude: ['pubsub'] }, function (err, db) {
     throw err
   }
 
+  db.createCollection('pubsub', {
+    capped: true,
+    size: 10 * 1024 * 1024, // 10 MB
+    max: 10000 // documents
+  }, function () {
+    db.close()
+    doTests()
+  })
+})
+
+function doTests () {
   var dbopts = {
     url: mongourl
   }
 
   var lastEmitter = null
-
-  db.close()
 
   abs({
     test: test,
@@ -61,7 +70,7 @@ clean(mongourl, { exclude: ['pubsub'] }, function (err, db) {
   test('multiple persistences', function (t) {
     t.plan(8)
 
-    clean(mongourl, function (err, db) {
+    clean(mongourl, { exclude: ['pubsub'] }, function (err, db) {
       t.error(err)
       db.close()
 
@@ -88,27 +97,23 @@ clean(mongourl, { exclude: ['pubsub'] }, function (err, db) {
 
       instance.addSubscriptions(client, subs, function (err) {
         t.notOk(err, 'no error')
-        // timeout needed because of mongodb latency
-        // TODO remove
-        setTimeout(function () {
-          instance2.subscriptionsByTopic('hello', function (err, resubs) {
-            t.notOk(err, 'no error')
-            t.deepEqual(resubs, [{
-              clientId: client.id,
-              topic: 'hello/#',
-              qos: 1
-            }, {
-              clientId: client.id,
-              topic: 'hello',
-              qos: 1
-            }])
-            instance.destroy(t.pass.bind(t, 'first dies'))
-            instance2.destroy(t.pass.bind(t, 'second dies'))
-            emitter.close(t.pass.bind(t, 'first emitter dies'))
-            emitter2.close(t.pass.bind(t, 'second emitter dies'))
-          })
-        }, 200)
+        instance2.subscriptionsByTopic('hello', function (err, resubs) {
+          t.notOk(err, 'no error')
+          t.deepEqual(resubs, [{
+            clientId: client.id,
+            topic: 'hello/#',
+            qos: 1
+          }, {
+            clientId: client.id,
+            topic: 'hello',
+            qos: 1
+          }])
+          instance.destroy(t.pass.bind(t, 'first dies'))
+          instance2.destroy(t.pass.bind(t, 'second dies'))
+          emitter.close(t.pass.bind(t, 'first emitter dies'))
+          emitter2.close(t.pass.bind(t, 'second emitter dies'))
+        })
       })
     })
   })
-})
+}
