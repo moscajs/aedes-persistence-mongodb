@@ -171,35 +171,23 @@ MongoPersistence.prototype.subscriptionsByClient = function (client, cb) {
 }
 
 MongoPersistence.prototype.countOffline = function (cb) {
-  setImmediate(cb, null, 0, 0)
-  // var subsCount = -1
-  // var clientsCount = -1
-  // this._db.subscriptions.aggregate([{
-  //   $group: {
-  //     _id: '$clientId',
-  //     count: {
-  //       $sum: 1
-  //     }
-  //   }
-  // }, {
-  //   $group: {
-  //     count: {
-  //       $sum: 1
-  //     }
-  //   }
-  // }]).toArray(function (err, count) {
-  //   if (err) { return cb(err) }
-  //   console.log(count)
-  //   subsCount = parseInt(count)
-  //   if (clientsCount >= 0)
-  //     cb(null, subsCount, clientsCount)
-  // })
-  // pipeline.get(offlineClientsCountKey, function (err, count) {
-  //   if (err) { return cb(err) }
-  //   clientsCount = parseInt(count)
-  //   if (subsCount >= 0)
-  //     cb(null, subsCount, clientsCount)
-  // })
+  var subsCount = 0
+  var clientsCount = 0
+  this._db.subscriptions.aggregate([{
+    $match: { qos: { $gt: 0 } }
+  }, {
+    $group: {
+      _id: '$clientId',
+      count: {
+        $sum: 1
+      }
+    }
+  }]).on('data', function (group) {
+    clientsCount++
+    subsCount += group.count
+  }).on('end', function () {
+    cb(null, subsCount, clientsCount)
+  }).on('error', cb)
 }
 
 MongoPersistence.prototype.destroy = function (cb) {
