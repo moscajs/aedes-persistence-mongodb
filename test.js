@@ -12,36 +12,25 @@ clean(mongourl, { exclude: ['pubsub'] }, function (err, db) {
     throw err
   }
 
-  db.createCollection('pubsub', {
-    capped: true,
-    size: 10 * 1024 * 1024, // 10 MB
-    max: 10000 // documents
-  }, function () {
+  test.onFinish(function () {
     db.close()
-    doTests()
   })
-})
 
-function doTests () {
   var dbopts = {
-    url: mongourl
+    db: db
   }
-
-  var lastEmitter = null
 
   abs({
     test: test,
     buildEmitter: function () {
       var emitter = mqemitterMongo(dbopts)
-      lastEmitter = emitter
       return emitter
     },
     persistence: function build (cb) {
-      clean(mongourl, { exclude: ['pubsub'] }, function (err, db) {
+      clean(db, { exclude: ['pubsub'] }, function (err, db) {
         if (err) {
           return cb(err)
         }
-        db.close()
 
         var instance = persistence(dbopts)
 
@@ -49,7 +38,9 @@ function doTests () {
 
         instance.destroy = function (cb) {
           oldDestroy.call(this, function () {
-            lastEmitter.close(cb)
+            instance.broker.mq.close(function () {
+              cb()
+            })
           })
         }
 
@@ -70,9 +61,8 @@ function doTests () {
   test('multiple persistences', function (t) {
     t.plan(8)
 
-    clean(mongourl, { exclude: ['pubsub'] }, function (err, db) {
+    clean(db, { exclude: ['pubsub'] }, function (err) {
       t.error(err)
-      db.close()
 
       var emitter = mqemitterMongo(dbopts)
       var emitter2 = mqemitterMongo(dbopts)
@@ -116,4 +106,4 @@ function doTests () {
       })
     })
   })
-}
+})

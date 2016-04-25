@@ -18,7 +18,10 @@ function MongoPersistence (opts) {
     return new MongoPersistence(opts)
   }
 
-  this._db = mongojs(opts.url, [
+  var conn = opts.db || opts.url || 'mongodb://127.0.0.1/aedes?auto_reconnect=true'
+
+  this._opts = opts
+  this._db = mongojs(conn, [
     'retained',
     'subscriptions',
     'outgoing',
@@ -225,12 +228,22 @@ MongoPersistence.prototype.destroy = function (cb) {
     return
   }
 
+  if (this._destroyed) {
+    throw new Error('destroyed called twice!')
+  }
+
+  this._destroyed = true
+
   cb = cb || noop
 
-  this._db.close(true, function () {
-    // swallow err in case of close
+  if (this._opts.db) {
     cb()
-  })
+  } else {
+    this._db.close(true, function () {
+      // swallow err in case of close
+      cb()
+    })
+  }
 }
 
 MongoPersistence.prototype.outgoingEnqueue = function (sub, packet, cb) {
