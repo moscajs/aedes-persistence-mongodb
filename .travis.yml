@@ -7,8 +7,8 @@ node_js:
   - "0.10"
 env:
   - MONGODB_VERSION="3.2.5"
-#   - MONGODB_VERSION="3.0.11"
-#   - MONGODB_VERSION="2.6.12"
+  - MONGODB_VERSION="3.0.11"
+  - MONGODB_VERSION="2.6.12"
 before_install:
   - wget http://fastdl.mongodb.org/linux/mongodb-linux-x86_64-$MONGODB_VERSION.tgz
   - tar xfz mongodb-linux-x86_64-$MONGODB_VERSION.tgz
