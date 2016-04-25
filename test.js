@@ -6,11 +6,12 @@ var abs = require('aedes-cached-persistence/abstract')
 var mqemitterMongo = require('mqemitter-mongodb')
 var clean = require('mongo-clean')
 var mongourl = 'mongodb://127.0.0.1/aedes-test'
-
-clean(mongourl, {
+var cleanopts = {
   exclude: ['pubsub'],
   action: 'remove'
-}, function (err, db) {
+}
+
+clean(mongourl, cleanopts, function (err, db) {
   if (err) {
     throw err
   }
@@ -30,10 +31,7 @@ clean(mongourl, {
       return emitter
     },
     persistence: function build (cb) {
-      clean(db, {
-        exclude: ['pubsub'],
-        action: 'remove'
-      }, function (err) {
+      clean(db, cleanopts, function (err) {
         if (err) {
           return cb(err)
         }
@@ -68,7 +66,7 @@ clean(mongourl, {
   test('multiple persistences', function (t) {
     t.plan(8)
 
-    clean(db, { exclude: ['pubsub'] }, function (err) {
+    clean(db, cleanopts, function (err) {
       t.error(err)
 
       var emitter = mqemitterMongo(dbopts)
