@@ -7,7 +7,10 @@ var mqemitterMongo = require('mqemitter-mongodb')
 var clean = require('mongo-clean')
 var mongourl = 'mongodb://127.0.0.1/aedes-test'
 
-clean(mongourl, { exclude: ['pubsub'] }, function (err, db) {
+clean(mongourl, {
+  exclude: ['pubsub'],
+  action: 'remove'
+}, function (err, db) {
   if (err) {
     throw err
   }
@@ -27,7 +30,10 @@ clean(mongourl, { exclude: ['pubsub'] }, function (err, db) {
       return emitter
     },
     persistence: function build (cb) {
-      clean(db, { exclude: ['pubsub'] }, function (err, db) {
+      clean(db, {
+        exclude: ['pubsub'],
+        action: 'remove'
+      }, function (err) {
         if (err) {
           return cb(err)
         }
@@ -37,7 +43,8 @@ clean(mongourl, { exclude: ['pubsub'] }, function (err, db) {
         var oldDestroy = instance.destroy
 
         instance.destroy = function (cb) {
-          oldDestroy.call(this, function () {
+          instance.destroy = oldDestroy
+          instance.destroy(function () {
             instance.broker.mq.close(function () {
               cb()
             })

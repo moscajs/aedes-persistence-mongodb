@@ -18,6 +18,8 @@ function MongoPersistence (opts) {
     return new MongoPersistence(opts)
   }
 
+  opts = opts || {}
+
   var conn = opts.db || opts.url || 'mongodb://127.0.0.1/aedes?auto_reconnect=true'
 
   this._opts = opts
