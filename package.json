@@ -29,17 +29,17 @@
     "concat-stream": "^1.5.1",
     "faucet": "0.0.1",
     "mongo-clean": "^1.1.0",
-    "mongodb": "^2.1.9",
-    "mqemitter-mongodb": "^1.2.0",
+    "mongodb": "^2.1.18",
+    "mqemitter-mongodb": "^2.0.0",
     "pre-commit": "^1.1.2",
-    "standard": "^6.0.0",
+    "standard": "^7.0.0",
     "tape": "^4.4.0"
   },
   "dependencies": {
-    "aedes-cached-persistence": "^1.0.0",
-    "mongojs": "^2.3.0",
+    "aedes-cached-persistence": "^2.0.0",
+    "mongojs": "^2.4.0",
     "pump": "^1.0.1",
-    "qlobber": "^0.5.3",
+    "qlobber": "^0.7.0",
     "through2": "^2.0.1"
   }
 }
