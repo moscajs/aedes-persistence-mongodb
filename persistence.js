@@ -304,11 +304,22 @@ MongoPersistence.prototype.outgoingUpdate = function (client, packet, cb) {
 }
 
 MongoPersistence.prototype.outgoingClearMessageId = function (client, packet, cb) {
-  this._db.outgoing.remove({
+  var that = this
+
+  this._db.outgoing.findOne({
     clientId: client.id,
     'packet.messageId': packet.messageId
-  }, function (err) {
-    cb(err, client)
+  }, function (err, p) {
+    if (err) {
+      return cb(err)
+    }
+
+    that._db.outgoing.remove({
+      clientId: client.id,
+      'packet.messageId': packet.messageId
+    }, function (err) {
+      cb(err, p.packet)
+    })
   })
 }
 
