@@ -314,6 +314,10 @@ MongoPersistence.prototype.outgoingClearMessageId = function (client, packet, cb
       return cb(err)
     }
 
+    if (!p) {
+      return cb(null)
+    }
+
     that._db.outgoing.remove({
       clientId: client.id,
       'packet.messageId': packet.messageId
