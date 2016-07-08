@@ -21,7 +21,7 @@ clean(mongourl, cleanopts, function (err, db) {
   })
 
   var dbopts = {
-    db: db
+    url: mongourl
   }
 
   abs({
