@@ -7,7 +7,6 @@ var mqemitterMongo = require('mqemitter-mongodb')
 var clean = require('mongo-clean')
 var mongourl = 'mongodb://127.0.0.1/aedes-test'
 var cleanopts = {
-  exclude: ['pubsub'],
   action: 'remove'
 }
 
@@ -17,7 +16,7 @@ clean(mongourl, cleanopts, function (err, db) {
   }
 
   test.onFinish(function () {
-    console.log('closing up MongoDB')
+    db.unref()
     db.close()
   })
 

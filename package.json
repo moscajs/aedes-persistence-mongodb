@@ -4,12 +4,15 @@
   "description": "MongoDB persistence for Aedes ",
   "main": "persistence.js",
   "scripts": {
-    "test": "standard && node test.js"
+    "test": "standard && node test.js | faucet"
   },
   "precommit": "test",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mcollina/aedes-persistence-mongodb.git"
+  },
+  "engines": {
+    "node": ">=4.0.0"
   },
   "keywords": [
     "Aedes",
@@ -29,15 +32,14 @@
     "concat-stream": "^1.5.1",
     "faucet": "0.0.1",
     "mongo-clean": "^1.1.0",
-    "mongodb": "^2.1.18",
-    "mqemitter-mongodb": "^2.0.0",
+    "mqemitter-mongodb": "^3.0.0",
     "pre-commit": "^1.1.2",
     "standard": "^7.0.0",
     "tape": "^4.4.0"
   },
   "dependencies": {
     "aedes-cached-persistence": "^2.0.0",
-    "mongojs": "^2.4.0",
+    "mongodb": "^2.1.18",
     "pump": "^1.0.1",
     "qlobber": "^0.7.0",
     "through2": "^2.0.1"
