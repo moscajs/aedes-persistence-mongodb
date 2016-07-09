@@ -21,7 +21,7 @@ It accepts a connections string url.
 Example:
 
 ```js
-aedesPersistenceRedis({
+aedesPersistenceMongoDB({
   url: 'mongodb://127.0.0.1/aedes-test'
 })
 ```
