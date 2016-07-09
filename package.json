@@ -4,7 +4,7 @@
   "description": "MongoDB persistence for Aedes ",
   "main": "persistence.js",
   "scripts": {
-    "test": "standard && tape test.js | faucet"
+    "test": "standard && node test.js"
   },
   "precommit": "test",
   "repository": {

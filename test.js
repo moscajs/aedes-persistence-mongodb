@@ -17,6 +17,7 @@ clean(mongourl, cleanopts, function (err, db) {
   }
 
   test.onFinish(function () {
+    console.log('closing up MongoDB')
     db.close()
   })
 
