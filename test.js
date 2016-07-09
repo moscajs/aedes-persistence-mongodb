@@ -7,6 +7,7 @@ var mqemitterMongo = require('mqemitter-mongodb')
 var clean = require('mongo-clean')
 var mongourl = 'mongodb://127.0.0.1/aedes-test'
 var cleanopts = {
+  exclude: 'pubsub',
   action: 'remove'
 }
 
@@ -63,7 +64,7 @@ clean(mongourl, cleanopts, function (err, db) {
     }
   }
 
-  test('multiple persistences', function (t) {
+  test.skip('multiple persistences', function (t) {
     t.plan(8)
 
     clean(db, cleanopts, function (err) {
