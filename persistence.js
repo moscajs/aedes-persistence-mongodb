@@ -490,6 +490,19 @@ MongoPersistence.prototype.streamWill = function (brokers) {
   return pump(this._cl.will.find(query), through.obj(asPacket))
 }
 
+MongoPersistence.prototype.getClientList = function (topic) {
+  var query = {}
+
+  if (topic) {
+    query['topic'] = topic
+  }
+
+  return pump(this._cl.subscriptions.find(query), through.obj(function asPacket (obj, enc, cb) {
+    this.push(obj.clientId)
+    cb()
+  }))
+}
+
 function noop () {}
 
 module.exports = MongoPersistence
