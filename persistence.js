@@ -35,7 +35,7 @@ MongoPersistence.prototype._connect = function (cb) {
     return
   }
 
-  var conn = this._opts.url || 'mongodb://127.0.0.1/aedes?auto_reconnect=true'
+  var conn = this._opts.url || 'mongodb://127.0.0.1/aedes?autoReconnect=true'
 
   mongodb.MongoClient.connect(conn, cb)
 }
