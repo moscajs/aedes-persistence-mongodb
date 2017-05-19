@@ -290,8 +290,12 @@ MongoPersistence.prototype.outgoingEnqueue = function (sub, packet, cb) {
 
 function asPacket (obj, enc, cb) {
   var packet = obj.packet
+
   if (packet.payload) {
-    packet.payload = packet.payload.buffer
+    var buffer = packet.payload.buffer
+    if (buffer && Buffer.isBuffer(buffer)) {
+      packet.payload = packet.payload.buffer
+    }
   }
   cb(null, packet)
 }
