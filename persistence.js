@@ -125,16 +125,10 @@ MongoPersistence.prototype.addSubscriptions = function (client, subs, cb) {
   }
 
   var published = 0
-  var count = 0
   var errored = false
-  var that = this
   var bulk = this._cl.subscriptions.initializeOrderedBulkOp()
   subs
     .forEach(function (sub) {
-      if (sub.qos > 0) {
-        count++
-        that._waitFor(client, sub.topic, finish)
-      }
       bulk.find({
         clientId: client.id,
         topic: sub.topic
@@ -159,7 +153,7 @@ MongoPersistence.prototype.addSubscriptions = function (client, subs, cb) {
       return
     }
     published++
-    if (published === count + 2) {
+    if (published === 2) {
       cb(null, client)
     }
   }
@@ -178,14 +172,10 @@ MongoPersistence.prototype.removeSubscriptions = function (client, subs, cb) {
   }
 
   var published = 0
-  var count = 0
   var errored = false
-  var that = this
   var bulk = this._cl.subscriptions.initializeOrderedBulkOp()
   subs
     .forEach(function (topic) {
-      count++
-      that._waitFor(client, topic, finish)
       bulk.find({
         clientId: client.id,
         topic: topic
@@ -202,7 +192,7 @@ MongoPersistence.prototype.removeSubscriptions = function (client, subs, cb) {
       return
     }
     published++
-    if (published === count + 2 && !errored) {
+    if (published === 2 && !errored) {
       cb(null, client)
     }
   }
