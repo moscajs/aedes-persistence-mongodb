@@ -126,7 +126,6 @@ MongoPersistence.prototype.addSubscriptions = function (client, subs, cb) {
 
   var published = 0
   var errored = false
-  var that = this
   var bulk = this._cl.subscriptions.initializeOrderedBulkOp()
   subs
     .forEach(function (sub) {
@@ -174,7 +173,6 @@ MongoPersistence.prototype.removeSubscriptions = function (client, subs, cb) {
 
   var published = 0
   var errored = false
-  var that = this
   var bulk = this._cl.subscriptions.initializeOrderedBulkOp()
   subs
     .forEach(function (topic) {
