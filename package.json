@@ -34,14 +34,14 @@
     "mongo-clean": "^1.1.0",
     "mqemitter-mongodb": "^3.0.2",
     "pre-commit": "^1.2.2",
-    "standard": "^10.0.0",
-    "tape": "^4.7.0"
+    "standard": "^10.0.3",
+    "tape": "^4.8.0"
   },
   "dependencies": {
-    "aedes-cached-persistence": "^5.0.1",
-    "mongodb": "^2.2.29",
+    "aedes-cached-persistence": "^6.0.0",
+    "mongodb": "^2.2.31",
     "pump": "^1.0.2",
-    "qlobber": "^0.8.0",
+    "qlobber": "^1.8.0",
     "through2": "^2.0.3"
   }
 }
