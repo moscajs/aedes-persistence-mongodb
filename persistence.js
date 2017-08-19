@@ -222,22 +222,16 @@ MongoPersistence.prototype.subscriptionsByClient = function (client, cb) {
 }
 
 MongoPersistence.prototype.countOffline = function (cb) {
-  var subsCount = 0
   var clientsCount = 0
+  var that = this
   this._cl.subscriptions.aggregate([{
-    $match: { qos: { $gt: 0 } }
-  }, {
     $group: {
-      _id: '$clientId',
-      count: {
-        $sum: 1
-      }
+      _id: '$clientId'
     }
-  }]).on('data', function (group) {
+  }]).on('data', function () {
     clientsCount++
-    subsCount += group.count
   }).on('end', function () {
-    cb(null, subsCount, clientsCount)
+    cb(null, that._trie.subscriptionsCount, clientsCount)
   }).on('error', cb)
 }
 
