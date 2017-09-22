@@ -68,7 +68,7 @@ MongoPersistence.prototype._setup = function () {
     subscriptions.find({
       qos: { $gt: 0 }
     }).on('data', function (chunk) {
-      that._matcher.add(chunk.topic, chunk)
+      that._trie.add(chunk.topic, chunk)
     }).on('end', function () {
       that.emit('ready')
     }).on('error', function (err) {
