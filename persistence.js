@@ -1,6 +1,7 @@
 'use strict'
 
 var util = require('util')
+var urlModule = require('url')
 var CachedPersistence = require('aedes-cached-persistence')
 var Packet = CachedPersistence.Packet
 var mongodb = require('mongodb')
@@ -35,8 +36,9 @@ MongoPersistence.prototype._connect = function (cb) {
     return
   }
 
-  var conn = this._opts.url || 'mongodb://127.0.0.1/aedes?autoReconnect=true'
+  var conn = this._opts.url || 'mongodb://127.0.0.1/aedes'
 
+  // TODO add options
   mongodb.MongoClient.connect(conn, cb)
 }
 
@@ -47,13 +49,17 @@ MongoPersistence.prototype._setup = function () {
 
   var that = this
 
-  this._connect(function (err, db) {
+  this._connect(function (err, client) {
     if (err) {
       this.emit('error', err)
       return
     }
 
-    that._db = db
+    that._client = client
+
+    var urlParsed = urlModule.parse(that._opts.url)
+    var databaseName = that._opts.database || (urlParsed.pathname ? urlParsed.pathname.substr(1) : undefined)
+    var db = that._db = client.db(databaseName)
 
     var subscriptions = db.collection('subscriptions')
 
@@ -252,11 +258,10 @@ MongoPersistence.prototype.destroy = function (cb) {
   if (this._opts.db) {
     cb()
   } else {
-    this._db.close(function () {
+    this._client.close(function () {
       // swallow err in case of close
       cb()
     })
-    this._db.unref()
   }
 }
 
