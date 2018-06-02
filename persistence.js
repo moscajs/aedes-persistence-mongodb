@@ -2,6 +2,7 @@
 
 var util = require('util')
 var urlModule = require('url')
+var escape = require('escape-string-regexp')
 var CachedPersistence = require('aedes-cached-persistence')
 var Packet = CachedPersistence.Packet
 var mongodb = require('mongodb')
@@ -116,9 +117,10 @@ function filterPattern (chunk, enc, cb) {
 }
 
 MongoPersistence.prototype.createRetainedStream = function (pattern) {
+  var actual = escape(pattern).replace(/(#|\\\+).*$/, '')
   return pump(
     this._cl.retained.find({
-      topic: new RegExp(pattern.replace(/(#|\+).*$/, ''))
+      topic: new RegExp(actual)
     }),
     filterStream(pattern)
   )

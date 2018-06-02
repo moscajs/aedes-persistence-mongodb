@@ -39,6 +39,7 @@
   },
   "dependencies": {
     "aedes-cached-persistence": "^6.0.0",
+    "escape-string-regexp": "^1.0.5",
     "mongodb": "^3.0.9",
     "pump": "^3.0.0",
     "qlobber": "^3.0.0",
