@@ -31,7 +31,7 @@
   "devDependencies": {
     "concat-stream": "^1.6.2",
     "faucet": "0.0.1",
-    "mongo-clean": "^1.1.0",
+    "mongo-clean": "^2.0.0",
     "mqemitter-mongodb": "^3.0.2",
     "pre-commit": "^1.2.2",
     "standard": "^11.0.0",
@@ -39,7 +39,7 @@
   },
   "dependencies": {
     "aedes-cached-persistence": "^6.0.0",
-    "mongodb": "^2.2.35",
+    "mongodb": "^3.0.9",
     "pump": "^3.0.0",
     "qlobber": "^3.0.0",
     "through2": "^2.0.3"

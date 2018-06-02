@@ -2,22 +2,35 @@
 
 var test = require('tape').test
 var persistence = require('./')
+var MongoClient = require('mongodb').MongoClient
 var abs = require('aedes-cached-persistence/abstract')
 var mqemitterMongo = require('mqemitter-mongodb')
 var clean = require('mongo-clean')
-var mongourl = 'mongodb://127.0.0.1/aedes-test'
+var dbname = 'aedes-test'
+var mongourl = 'mongodb://127.0.0.1/' + dbname
 var cleanopts = {
   action: 'remove'
 }
 
-clean(mongourl, cleanopts, function (err, db) {
+MongoClient.connect(mongourl, { w: 1 }, function (err, client) {
   if (err) {
     throw err
   }
 
+  var db = client.db(dbname)
+
+  clean(db, cleanopts, function (err, db) {
+    if (err) {
+      throw err
+    }
+
+    runTest(client, db)
+  })
+})
+
+function runTest (client, db) {
   test.onFinish(function () {
-    db.unref()
-    db.close()
+    client.close()
   })
 
   var dbopts = {
@@ -128,4 +141,4 @@ clean(mongourl, cleanopts, function (err, db) {
       })
     })
   })
-})
+}
