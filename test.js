@@ -84,12 +84,12 @@ function runTest (client, db) {
 
       var emitter = mqemitterMongo(dbopts)
 
-      emitter.status.on('stream', function () {
+      emitter.status.once('stream', function () {
         t.pass('mqemitter 1 ready')
 
         var emitter2 = mqemitterMongo(dbopts)
 
-        emitter2.status.on('stream', function () {
+        emitter2.status.once('stream', function () {
           t.pass('mqemitter 2 ready')
 
           var instance = persistence(dbopts)
@@ -118,22 +118,30 @@ function runTest (client, db) {
 
               instance.addSubscriptions(client, subs, function (err) {
                 t.notOk(err, 'no error')
-                instance2.subscriptionsByTopic('hello', function (err, resubs) {
-                  t.notOk(err, 'no error')
-                  t.deepEqual(resubs, [{
-                    clientId: client.id,
-                    topic: 'hello/#',
-                    qos: 1
-                  }, {
-                    clientId: client.id,
-                    topic: 'hello',
-                    qos: 1
-                  }])
-                  instance.destroy(t.pass.bind(t, 'first dies'))
-                  instance2.destroy(t.pass.bind(t, 'second dies'))
-                  emitter.close(t.pass.bind(t, 'first emitter dies'))
-                  emitter2.close(t.pass.bind(t, 'second emitter dies'))
-                })
+                setTimeout(function () {
+                  instance2.subscriptionsByTopic('hello', function (err, resubs) {
+                    t.notOk(err, 'no error')
+                    t.deepEqual(resubs, [{
+                      clientId: client.id,
+                      topic: 'hello/#',
+                      qos: 1
+                    }, {
+                      clientId: client.id,
+                      topic: 'hello',
+                      qos: 1
+                    }])
+                    instance.destroy(function () {
+                      t.pass('first dies')
+                      emitter.close(function () {
+                        t.pass('first emitter dies')
+                        instance2.destroy(function () {
+                          t.pass('seond dies')
+                          emitter2.close(t.pass.bind(t, 'second emitter dies'))
+                        })
+                      })
+                    })
+                  })
+                }, 100)
               })
             })
           })
