@@ -58,7 +58,7 @@ MongoPersistence.prototype._setup = function () {
 
     that._client = client
 
-   var db
+    var db
     if (that._opts.db) {
       db = that._opts.db
     } else {
