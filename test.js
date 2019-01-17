@@ -149,4 +149,161 @@ function runTest (client, db) {
       })
     })
   })
+
+  var dboptsWithDbObjectAndUrl = {
+    url: mongourl,
+    db: db
+  }
+
+  test('multiple persistences with passed db object and url', function (t) {
+    t.plan(12)
+
+    clean(db, cleanopts, function (err) {
+      t.error(err)
+
+      var emitter = mqemitterMongo(dboptsWithDbObjectAndUrl)
+
+      emitter.status.once('stream', function () {
+        t.pass('mqemitter 1 ready')
+
+        var emitter2 = mqemitterMongo(dboptsWithDbObjectAndUrl)
+
+        emitter2.status.once('stream', function () {
+          t.pass('mqemitter 2 ready')
+
+          var instance = persistence(dboptsWithDbObjectAndUrl)
+          instance.broker = toBroker('1', emitter)
+
+          instance.on('ready', function () {
+            t.pass('instance ready')
+
+            var instance2 = persistence(dboptsWithDbObjectAndUrl)
+            instance2.broker = toBroker('2', emitter2)
+
+            instance2.on('ready', function () {
+              t.pass('instance2 ready')
+
+              var client = { id: 'abcde' }
+              var subs = [{
+                topic: 'hello',
+                qos: 1
+              }, {
+                topic: 'hello/#',
+                qos: 1
+              }, {
+                topic: 'matteo',
+                qos: 1
+              }]
+
+              instance.addSubscriptions(client, subs, function (err) {
+                t.notOk(err, 'no error')
+                setTimeout(function () {
+                  instance2.subscriptionsByTopic('hello', function (err, resubs) {
+                    t.notOk(err, 'no error')
+                    t.deepEqual(resubs, [{
+                      clientId: client.id,
+                      topic: 'hello/#',
+                      qos: 1
+                    }, {
+                      clientId: client.id,
+                      topic: 'hello',
+                      qos: 1
+                    }])
+                    instance.destroy(function () {
+                      t.pass('first dies')
+                      emitter.close(function () {
+                        t.pass('first emitter dies')
+                        instance2.destroy(function () {
+                          t.pass('seond dies')
+                          emitter2.close(t.pass.bind(t, 'second emitter dies'))
+                        })
+                      })
+                    })
+                  })
+                }, 100)
+              })
+            })
+          })
+        })
+      })
+    })
+  })
+
+  var dboptsWithOnlyDbObject = {
+    db: db
+  }
+
+  test('multiple persistences with passed only db object', function (t) {
+    t.plan(12)
+
+    clean(db, cleanopts, function (err) {
+      t.error(err)
+
+      var emitter = mqemitterMongo(dboptsWithOnlyDbObject)
+
+      emitter.status.once('stream', function () {
+        t.pass('mqemitter 1 ready')
+
+        var emitter2 = mqemitterMongo(dboptsWithOnlyDbObject)
+
+        emitter2.status.once('stream', function () {
+          t.pass('mqemitter 2 ready')
+
+          var instance = persistence(dboptsWithOnlyDbObject)
+          instance.broker = toBroker('1', emitter)
+
+          instance.on('ready', function () {
+            t.pass('instance ready')
+
+            var instance2 = persistence(dboptsWithOnlyDbObject)
+            instance2.broker = toBroker('2', emitter2)
+
+            instance2.on('ready', function () {
+              t.pass('instance2 ready')
+
+              var client = { id: 'abcde' }
+              var subs = [{
+                topic: 'hello',
+                qos: 1
+              }, {
+                topic: 'hello/#',
+                qos: 1
+              }, {
+                topic: 'matteo',
+                qos: 1
+              }]
+
+              instance.addSubscriptions(client, subs, function (err) {
+                t.notOk(err, 'no error')
+                setTimeout(function () {
+                  instance2.subscriptionsByTopic('hello', function (err, resubs) {
+                    t.notOk(err, 'no error')
+                    t.deepEqual(resubs, [{
+                      clientId: client.id,
+                      topic: 'hello/#',
+                      qos: 1
+                    }, {
+                      clientId: client.id,
+                      topic: 'hello',
+                      qos: 1
+                    }])
+                    instance.destroy(function () {
+                      t.pass('first dies')
+                      emitter.close(function () {
+                        t.pass('first emitter dies')
+                        instance2.destroy(function () {
+                          t.pass('seond dies')
+                          emitter2.close(t.pass.bind(t, 'second emitter dies'))
+                        })
+                      })
+                    })
+                  })
+                }, 100)
+              })
+            })
+          })
+        })
+      })
+    })
+  })
 }
