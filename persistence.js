@@ -58,9 +58,14 @@ MongoPersistence.prototype._setup = function () {
 
     that._client = client
 
-    var urlParsed = urlModule.parse(that._opts.url)
-    var databaseName = that._opts.database || (urlParsed.pathname ? urlParsed.pathname.substr(1) : undefined)
-    var db = that._db = client.db(databaseName)
+    var db
+    if (that._opts.db) {
+      db = that._opts.db
+    } else {
+      var urlParsed = urlModule.parse(that._opts.url)
+      var databaseName = that._opts.database || (urlParsed.pathname ? urlParsed.pathname.substr(1) : undefined)
+      db = that._db = client.db(databaseName)
+    }
 
     var subscriptions = db.collection('subscriptions')
 
