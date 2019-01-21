@@ -16,7 +16,7 @@ npm i aedes aedes-persistence-mongodb --save
 ### aedesPersistenceMongoDB([opts])
 
 Creates a new instance of aedes-persistence-mongodb.
-It accepts a connections string url or you can pass you existing db object.
+It accepts a connections string url or you can pass your existing db object.
 
 Example:
 
@@ -26,7 +26,6 @@ aedesPersistenceMongoDB({
 })
 ```
 Or
-
 ```
 aedesPersistenceMongoDB({
  db:db
