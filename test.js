@@ -12,7 +12,7 @@ var cleanopts = {
   action: 'remove'
 }
 
-MongoClient.connect(mongourl, { w: 1 }, function (err, client) {
+MongoClient.connect(mongourl, { useNewUrlParser: true, w: 1 }, function (err, client) {
   if (err) {
     throw err
   }
