@@ -2,22 +2,35 @@
 
 var test = require('tape').test
 var persistence = require('./')
+var MongoClient = require('mongodb').MongoClient
 var abs = require('aedes-cached-persistence/abstract')
 var mqemitterMongo = require('mqemitter-mongodb')
 var clean = require('mongo-clean')
-var mongourl = 'mongodb://127.0.0.1/aedes-test'
+var dbname = 'aedes-test'
+var mongourl = 'mongodb://127.0.0.1/' + dbname
 var cleanopts = {
   action: 'remove'
 }
 
-clean(mongourl, cleanopts, function (err, db) {
+MongoClient.connect(mongourl, { useNewUrlParser: true, w: 1 }, function (err, client) {
   if (err) {
     throw err
   }
 
+  var db = client.db(dbname)
+
+  clean(db, cleanopts, function (err, db) {
+    if (err) {
+      throw err
+    }
+
+    runTest(client, db)
+  })
+})
+
+function runTest (client, db) {
   test.onFinish(function () {
-    db.unref()
-    db.close()
+    client.close()
   })
 
   var dbopts = {
@@ -71,12 +84,12 @@ clean(mongourl, cleanopts, function (err, db) {
 
       var emitter = mqemitterMongo(dbopts)
 
-      emitter.status.on('stream', function () {
+      emitter.status.once('stream', function () {
         t.pass('mqemitter 1 ready')
 
         var emitter2 = mqemitterMongo(dbopts)
 
-        emitter2.status.on('stream', function () {
+        emitter2.status.once('stream', function () {
           t.pass('mqemitter 2 ready')
 
           var instance = persistence(dbopts)
@@ -105,22 +118,187 @@ clean(mongourl, cleanopts, function (err, db) {
 
               instance.addSubscriptions(client, subs, function (err) {
                 t.notOk(err, 'no error')
-                instance2.subscriptionsByTopic('hello', function (err, resubs) {
-                  t.notOk(err, 'no error')
-                  t.deepEqual(resubs, [{
-                    clientId: client.id,
-                    topic: 'hello/#',
-                    qos: 1
-                  }, {
-                    clientId: client.id,
-                    topic: 'hello',
-                    qos: 1
-                  }])
-                  instance.destroy(t.pass.bind(t, 'first dies'))
-                  instance2.destroy(t.pass.bind(t, 'second dies'))
-                  emitter.close(t.pass.bind(t, 'first emitter dies'))
-                  emitter2.close(t.pass.bind(t, 'second emitter dies'))
-                })
+                setTimeout(function () {
+                  instance2.subscriptionsByTopic('hello', function (err, resubs) {
+                    t.notOk(err, 'no error')
+                    t.deepEqual(resubs, [{
+                      clientId: client.id,
+                      topic: 'hello/#',
+                      qos: 1
+                    }, {
+                      clientId: client.id,
+                      topic: 'hello',
+                      qos: 1
+                    }])
+                    instance.destroy(function () {
+                      t.pass('first dies')
+                      emitter.close(function () {
+                        t.pass('first emitter dies')
+                        instance2.destroy(function () {
+                          t.pass('seond dies')
+                          emitter2.close(t.pass.bind(t, 'second emitter dies'))
+                        })
+                      })
+                    })
+                  })
+                }, 100)
+              })
+            })
+          })
+        })
+      })
+    })
+  })
+
+  var dboptsWithDbObjectAndUrl = {
+    url: mongourl,
+    db: db
+  }
+
+  test('multiple persistences with passed db object and url', function (t) {
+    t.plan(12)
+
+    clean(db, cleanopts, function (err) {
+      t.error(err)
+
+      var emitter = mqemitterMongo(dboptsWithDbObjectAndUrl)
+
+      emitter.status.once('stream', function () {
+        t.pass('mqemitter 1 ready')
+
+        var emitter2 = mqemitterMongo(dboptsWithDbObjectAndUrl)
+
+        emitter2.status.once('stream', function () {
+          t.pass('mqemitter 2 ready')
+
+          var instance = persistence(dboptsWithDbObjectAndUrl)
+          instance.broker = toBroker('1', emitter)
+
+          instance.on('ready', function () {
+            t.pass('instance ready')
+
+            var instance2 = persistence(dboptsWithDbObjectAndUrl)
+            instance2.broker = toBroker('2', emitter2)
+
+            instance2.on('ready', function () {
+              t.pass('instance2 ready')
+
+              var client = { id: 'abcde' }
+              var subs = [{
+                topic: 'hello',
+                qos: 1
+              }, {
+                topic: 'hello/#',
+                qos: 1
+              }, {
+                topic: 'matteo',
+                qos: 1
+              }]
+
+              instance.addSubscriptions(client, subs, function (err) {
+                t.notOk(err, 'no error')
+                setTimeout(function () {
+                  instance2.subscriptionsByTopic('hello', function (err, resubs) {
+                    t.notOk(err, 'no error')
+                    t.deepEqual(resubs, [{
+                      clientId: client.id,
+                      topic: 'hello/#',
+                      qos: 1
+                    }, {
+                      clientId: client.id,
+                      topic: 'hello',
+                      qos: 1
+                    }])
+                    instance.destroy(function () {
+                      t.pass('first dies')
+                      emitter.close(function () {
+                        t.pass('first emitter dies')
+                        instance2.destroy(function () {
+                          t.pass('seond dies')
+                          emitter2.close(t.pass.bind(t, 'second emitter dies'))
+                        })
+                      })
+                    })
+                  })
+                }, 100)
+              })
+            })
+          })
+        })
+      })
+    })
+  })
+
+  var dboptsWithOnlyDbObject = {
+    db: db
+  }
+
+  test('multiple persistences with passed only db object', function (t) {
+    t.plan(12)
+
+    clean(db, cleanopts, function (err) {
+      t.error(err)
+
+      var emitter = mqemitterMongo(dboptsWithOnlyDbObject)
+
+      emitter.status.once('stream', function () {
+        t.pass('mqemitter 1 ready')
+
+        var emitter2 = mqemitterMongo(dboptsWithOnlyDbObject)
+
+        emitter2.status.once('stream', function () {
+          t.pass('mqemitter 2 ready')
+
+          var instance = persistence(dboptsWithOnlyDbObject)
+          instance.broker = toBroker('1', emitter)
+
+          instance.on('ready', function () {
+            t.pass('instance ready')
+
+            var instance2 = persistence(dboptsWithOnlyDbObject)
+            instance2.broker = toBroker('2', emitter2)
+
+            instance2.on('ready', function () {
+              t.pass('instance2 ready')
+
+              var client = { id: 'abcde' }
+              var subs = [{
+                topic: 'hello',
+                qos: 1
+              }, {
+                topic: 'hello/#',
+                qos: 1
+              }, {
+                topic: 'matteo',
+                qos: 1
+              }]
+
+              instance.addSubscriptions(client, subs, function (err) {
+                t.notOk(err, 'no error')
+                setTimeout(function () {
+                  instance2.subscriptionsByTopic('hello', function (err, resubs) {
+                    t.notOk(err, 'no error')
+                    t.deepEqual(resubs, [{
+                      clientId: client.id,
+                      topic: 'hello/#',
+                      qos: 1
+                    }, {
+                      clientId: client.id,
+                      topic: 'hello',
+                      qos: 1
+                    }])
+                    instance.destroy(function () {
+                      t.pass('first dies')
+                      emitter.close(function () {
+                        t.pass('first emitter dies')
+                        instance2.destroy(function () {
+                          t.pass('seond dies')
+                          emitter2.close(t.pass.bind(t, 'second emitter dies'))
+                        })
+                      })
+                    })
+                  })
+                }, 100)
               })
             })
           })
@@ -176,4 +354,4 @@ clean(mongourl, cleanopts, function (err, db) {
       })
     })
   })
-})
+}

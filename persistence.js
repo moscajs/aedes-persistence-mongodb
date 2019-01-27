@@ -1,6 +1,8 @@
 'use strict'
 
 var util = require('util')
+var urlModule = require('url')
+var escape = require('escape-string-regexp')
 var CachedPersistence = require('aedes-cached-persistence')
 var Packet = CachedPersistence.Packet
 var mongodb = require('mongodb')
@@ -35,9 +37,10 @@ MongoPersistence.prototype._connect = function (cb) {
     return
   }
 
-  var conn = this._opts.url || 'mongodb://127.0.0.1/aedes?autoReconnect=true'
+  var conn = this._opts.url || 'mongodb://127.0.0.1/aedes'
 
-  mongodb.MongoClient.connect(conn, cb)
+  // TODO add options
+  mongodb.MongoClient.connect(conn, { useNewUrlParser: true }, cb)
 }
 
 MongoPersistence.prototype._setup = function () {
@@ -47,13 +50,22 @@ MongoPersistence.prototype._setup = function () {
 
   var that = this
 
-  this._connect(function (err, db) {
+  this._connect(function (err, client) {
     if (err) {
       this.emit('error', err)
       return
     }
 
-    that._db = db
+    that._client = client
+
+    var db
+    if (that._opts.db) {
+      db = that._opts.db
+    } else {
+      var urlParsed = urlModule.parse(that._opts.url)
+      var databaseName = that._opts.database || (urlParsed.pathname ? urlParsed.pathname.substr(1) : undefined)
+      db = that._db = client.db(databaseName)
+    }
 
     var subscriptions = db.collection('subscriptions')
 
@@ -84,9 +96,9 @@ MongoPersistence.prototype.storeRetained = function (packet, cb) {
   }
   var criteria = { topic: packet.topic }
   if (packet.payload.length > 0) {
-    this._cl.retained.update(criteria, packet, { upsert: true }, cb)
+    this._cl.retained.updateOne(criteria, { $set: packet }, { upsert: true }, cb)
   } else {
-    this._cl.retained.remove(criteria, cb)
+    this._cl.retained.deleteOne(criteria, cb)
   }
 }
 
@@ -110,9 +122,10 @@ function filterPattern (chunk, enc, cb) {
 }
 
 MongoPersistence.prototype.createRetainedStream = function (pattern) {
+  var actual = escape(pattern).replace(/(#|\\\+).*$/, '')
   return pump(
     this._cl.retained.find({
-      topic: new RegExp(pattern.replace(/(#|\+).*$/, ''))
+      topic: new RegExp(actual)
     }),
     filterStream(pattern)
   )
@@ -252,11 +265,10 @@ MongoPersistence.prototype.destroy = function (cb) {
   if (this._opts.db) {
     cb()
   } else {
-    this._db.close(function () {
+    this._client.close(function () {
       // swallow err in case of close
       cb()
     })
-    this._db.unref()
   }
 }
 
@@ -266,7 +278,7 @@ MongoPersistence.prototype.outgoingEnqueue = function (sub, packet, cb) {
     return
   }
 
-  this._cl.outgoing.insert({
+  this._cl.outgoing.insertOne({
     clientId: sub.clientId,
     packet: new Packet(packet)
   }, cb)
@@ -291,7 +303,7 @@ MongoPersistence.prototype.outgoingStream = function (client) {
 }
 
 function updateWithMessageId (db, client, packet, cb) {
-  db.outgoing.update({
+  db.outgoing.updateOne({
     clientId: client.id,
     'packet.brokerCounter': packet.brokerCounter,
     'packet.brokerId': packet.brokerId
@@ -305,12 +317,14 @@ function updateWithMessageId (db, client, packet, cb) {
 }
 
 function updatePacket (db, client, packet, cb) {
-  db.outgoing.update({
+  db.outgoing.updateOne({
     clientId: client.id,
     'packet.messageId': packet.messageId
   }, {
-    clientId: client.id,
-    packet: packet
+    $set: {
+      clientId: client.id,
+      packet: packet
+    }
   }, function (err) {
     cb(err, client, packet)
   })
@@ -348,7 +362,7 @@ MongoPersistence.prototype.outgoingClearMessageId = function (client, packet, cb
       return cb(null)
     }
 
-    outgoing.remove({
+    outgoing.deleteOne({
       clientId: client.id,
       'packet.messageId': packet.messageId
     }, function (err) {
@@ -366,7 +380,7 @@ MongoPersistence.prototype.incomingStorePacket = function (client, packet, cb) {
   var newp = new Packet(packet)
   newp.messageId = packet.messageId
 
-  this._cl.incoming.insert({
+  this._cl.incoming.insertOne({
     clientId: client.id,
     packet: newp
   }, cb)
@@ -408,7 +422,7 @@ MongoPersistence.prototype.incomingDelPacket = function (client, packet, cb) {
     return
   }
 
-  this._cl.incoming.remove({
+  this._cl.incoming.deleteOne({
     clientId: client.id,
     'packet.messageId': packet.messageId
   }, cb)
@@ -422,7 +436,7 @@ MongoPersistence.prototype.putWill = function (client, packet, cb) {
 
   packet.clientId = client.id
   packet.brokerId = this.broker.id
-  this._cl.will.insert({
+  this._cl.will.insertOne({
     clientId: client.id,
     packet: packet
   }, function (err) {
@@ -461,7 +475,7 @@ MongoPersistence.prototype.delWill = function (client, cb) {
       cb(err, null, client)
       return
     }
-    will.remove({
+    will.deleteOne({
       clientId: client.id
     }, function (err) {
       cb(err, packet, client)
