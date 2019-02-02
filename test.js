@@ -306,4 +306,52 @@ function runTest (client, db) {
       })
     })
   })
+
+  test('qos 0 subs restoration', function (t) {
+    t.plan(10)
+
+    clean(db, cleanopts, function (err) {
+      t.error(err)
+
+      var emitter = mqemitterMongo(dbopts)
+
+      emitter.status.on('stream', function () {
+        t.pass('mqemitter 1 ready')
+        var instance = persistence(dbopts)
+        instance.broker = toBroker('1', emitter)
+
+        instance.on('ready', function () {
+          t.pass('instance ready')
+          var client = { id: 'abcde' }
+          var subs = [{
+            topic: 'hello',
+            qos: 0
+          }]
+
+          instance.addSubscriptions(client, subs, function (err, client) {
+            t.notOk(err, 'no error')
+
+            instance.destroy(t.pass.bind(t, 'first dies'))
+            emitter.close(t.pass.bind(t, 'first emitter dies'))
+
+            var instance2 = persistence(dbopts)
+            instance2.broker = toBroker('1', emitter)
+
+            instance2.on('ready', function () {
+              t.pass('instance ready')
+              instance2.subscriptionsByTopic('hello', function (err, resubs) {
+                t.notOk(err, 'should not err')
+                t.deepEqual(resubs, [{
+                  clientId: 'abcde',
+                  topic: 'hello',
+                  qos: 0
+                }])
+                instance2.destroy(t.pass.bind(t, 'second dies'))
+              })
+            })
+          })
+        })
+      })
+    })
+  })
 }
