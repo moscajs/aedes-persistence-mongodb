@@ -101,16 +101,21 @@ MongoPersistence.prototype._setup = function () {
   })
 }
 
-MongoPersistence.prototype.storeRetained = function (packet, cb) {
-  packet.added = new Date()
+function decoratePacket (packet, opts) {
+  if (opts.ttl.packets) {
+    packet.added = new Date()
+  }
+  return packet
+}
 
+MongoPersistence.prototype.storeRetained = function (packet, cb) {
   if (!this.ready) {
     this.once('ready', this.storeRetained.bind(this, packet, cb))
     return
   }
   var criteria = { topic: packet.topic }
   if (packet.payload.length > 0) {
-    this._cl.retained.updateOne(criteria, { $set: packet }, { upsert: true }, cb)
+    this._cl.retained.updateOne(criteria, { $set: decoratePacket(packet, this._opts) }, { upsert: true }, cb)
   } else {
     this._cl.retained.deleteOne(criteria, cb)
   }
@@ -145,26 +150,36 @@ MongoPersistence.prototype.createRetainedStream = function (pattern) {
   )
 }
 
+function decorateSubscription (sub, opts) {
+  if (opts.ttl.subscriptions) {
+    sub.added = new Date()
+  }
+  return sub
+}
+
 MongoPersistence.prototype.addSubscriptions = function (client, subs, cb) {
   if (!this.ready) {
     this.once('ready', this.addSubscriptions.bind(this, client, subs, cb))
     return
   }
 
+  var that = this
   var published = 0
   var errored = false
   var bulk = this._cl.subscriptions.initializeOrderedBulkOp()
   subs
     .forEach(function (sub) {
+      var subscription = {
+        clientId: client.id,
+        topic: sub.topic,
+        qos: sub.qos
+      }
       bulk.find({
         clientId: client.id,
         topic: sub.topic
-      }).upsert().updateOne({
-        clientId: client.id,
-        topic: sub.topic,
-        qos: sub.qos,
-        added: new Date()
-      })
+      }).upsert().updateOne(
+        decorateSubscription(subscription, that._opts)
+      )
     })
 
   this._addedSubscriptions(client, subs, function (err) {
@@ -288,19 +303,16 @@ MongoPersistence.prototype.destroy = function (cb) {
 }
 
 MongoPersistence.prototype.outgoingEnqueue = function (sub, packet, cb) {
-  packet.added = new Date()
-
   if (!this.ready) {
     this.once('ready', this.outgoingEnqueue.bind(this, sub, packet, cb))
     return
   }
 
   var newp = new Packet(packet)
-  newp.added = packet.added
 
   this._cl.outgoing.insertOne({
     clientId: sub.clientId,
-    packet: newp
+    packet: decoratePacket(newp, this._opts)
   }, cb)
 }
 
@@ -392,8 +404,6 @@ MongoPersistence.prototype.outgoingClearMessageId = function (client, packet, cb
 }
 
 MongoPersistence.prototype.incomingStorePacket = function (client, packet, cb) {
-  packet.added = new Date()
-
   if (!this.ready) {
     this.once('ready', this.incomingStorePacket.bind(this, client, packet, cb))
     return
@@ -401,11 +411,10 @@ MongoPersistence.prototype.incomingStorePacket = function (client, packet, cb) {
 
   var newp = new Packet(packet)
   newp.messageId = packet.messageId
-  newp.added = packet.added
 
   this._cl.incoming.insertOne({
     clientId: client.id,
-    packet: newp
+    packet: decoratePacket(newp, this._opts)
   }, cb)
 }
 
@@ -452,8 +461,6 @@ MongoPersistence.prototype.incomingDelPacket = function (client, packet, cb) {
 }
 
 MongoPersistence.prototype.putWill = function (client, packet, cb) {
-  packet.added = new Date()
-
   if (!this.ready) {
     this.once('ready', this.putWill.bind(this, client, packet, cb))
     return
@@ -463,7 +470,7 @@ MongoPersistence.prototype.putWill = function (client, packet, cb) {
   packet.brokerId = this.broker.id
   this._cl.will.insertOne({
     clientId: client.id,
-    packet: packet
+    packet: decoratePacket(packet, this._opts)
   }, function (err) {
     cb(err, client)
   })
