@@ -83,11 +83,11 @@ MongoPersistence.prototype._setup = function () {
       incoming: incoming
     }
 
-    subscriptions.createIndex({'added': 1}, {expireAfterSeconds: (that._opts.ttl.subscriptions || EXPIRY_SECONDS)})
-    retained.createIndex({'added': 1}, {expireAfterSeconds: (that._opts.ttl.packets || EXPIRY_SECONDS)})
-    will.createIndex({'added': 1}, {expireAfterSeconds: (that._opts.ttl.packets || EXPIRY_SECONDS)})
-    outgoing.createIndex({'added': 1}, {expireAfterSeconds: (that._opts.ttl.packets || EXPIRY_SECONDS)})
-    incoming.createIndex({'added': 1}, {expireAfterSeconds: (that._opts.ttl.packets || EXPIRY_SECONDS)})
+    subscriptions.createIndex({ 'added': 1 }, { expireAfterSeconds: (that._opts.ttl.subscriptions || EXPIRY_SECONDS) })
+    retained.createIndex({ 'added': 1 }, { expireAfterSeconds: (that._opts.ttl.packets || EXPIRY_SECONDS) })
+    will.createIndex({ 'added': 1 }, { expireAfterSeconds: (that._opts.ttl.packets || EXPIRY_SECONDS) })
+    outgoing.createIndex({ 'added': 1 }, { expireAfterSeconds: (that._opts.ttl.packets || EXPIRY_SECONDS) })
+    incoming.createIndex({ 'added': 1 }, { expireAfterSeconds: (that._opts.ttl.packets || EXPIRY_SECONDS) })
 
     subscriptions.find({
       qos: { $gte: 0 }
