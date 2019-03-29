@@ -14,6 +14,7 @@ var qlobberOpts = {
   wildcard_one: '+',
   wildcard_some: '#'
 }
+const EXPIRY_SECONDS = 86400
 
 function MongoPersistence (opts) {
   if (!(this instanceof MongoPersistence)) {
@@ -21,6 +22,7 @@ function MongoPersistence (opts) {
   }
 
   opts = opts || {}
+  opts.ttl = opts.ttl || {}
 
   this._opts = opts
   this._db = null
@@ -68,14 +70,24 @@ MongoPersistence.prototype._setup = function () {
     }
 
     var subscriptions = db.collection('subscriptions')
+    var retained = db.collection('retained')
+    var will = db.collection('will')
+    var outgoing = db.collection('outgoing')
+    var incoming = db.collection('incoming')
 
     that._cl = {
       subscriptions: subscriptions,
-      retained: db.collection('retained'),
-      will: db.collection('will'),
-      outgoing: db.collection('outgoing'),
-      incoming: db.collection('incoming')
+      retained: retained,
+      will: will,
+      outgoing: outgoing,
+      incoming: incoming
     }
+
+    subscriptions.createIndex({'added': 1}, {expireAfterSeconds: (that._opts.ttl.subscriptions || EXPIRY_SECONDS)})
+    retained.createIndex({'added': 1}, {expireAfterSeconds: (that._opts.ttl.packets || EXPIRY_SECONDS)})
+    will.createIndex({'added': 1}, {expireAfterSeconds: (that._opts.ttl.packets || EXPIRY_SECONDS)})
+    outgoing.createIndex({'added': 1}, {expireAfterSeconds: (that._opts.ttl.packets || EXPIRY_SECONDS)})
+    incoming.createIndex({'added': 1}, {expireAfterSeconds: (that._opts.ttl.packets || EXPIRY_SECONDS)})
 
     subscriptions.find({
       qos: { $gte: 0 }
@@ -90,6 +102,8 @@ MongoPersistence.prototype._setup = function () {
 }
 
 MongoPersistence.prototype.storeRetained = function (packet, cb) {
+  packet.added = new Date()
+
   if (!this.ready) {
     this.once('ready', this.storeRetained.bind(this, packet, cb))
     return
@@ -148,7 +162,8 @@ MongoPersistence.prototype.addSubscriptions = function (client, subs, cb) {
       }).upsert().updateOne({
         clientId: client.id,
         topic: sub.topic,
-        qos: sub.qos
+        qos: sub.qos,
+        added: new Date()
       })
     })
 
@@ -273,14 +288,19 @@ MongoPersistence.prototype.destroy = function (cb) {
 }
 
 MongoPersistence.prototype.outgoingEnqueue = function (sub, packet, cb) {
+  packet.added = new Date()
+
   if (!this.ready) {
     this.once('ready', this.outgoingEnqueue.bind(this, sub, packet, cb))
     return
   }
 
+  var newp = new Packet(packet)
+  newp.added = packet.added
+
   this._cl.outgoing.insertOne({
     clientId: sub.clientId,
-    packet: new Packet(packet)
+    packet: newp
   }, cb)
 }
 
@@ -372,6 +392,8 @@ MongoPersistence.prototype.outgoingClearMessageId = function (client, packet, cb
 }
 
 MongoPersistence.prototype.incomingStorePacket = function (client, packet, cb) {
+  packet.added = new Date()
+
   if (!this.ready) {
     this.once('ready', this.incomingStorePacket.bind(this, client, packet, cb))
     return
@@ -379,6 +401,7 @@ MongoPersistence.prototype.incomingStorePacket = function (client, packet, cb) {
 
   var newp = new Packet(packet)
   newp.messageId = packet.messageId
+  newp.added = packet.added
 
   this._cl.incoming.insertOne({
     clientId: client.id,
@@ -429,6 +452,8 @@ MongoPersistence.prototype.incomingDelPacket = function (client, packet, cb) {
 }
 
 MongoPersistence.prototype.putWill = function (client, packet, cb) {
+  packet.added = new Date()
+
   if (!this.ready) {
     this.once('ready', this.putWill.bind(this, client, packet, cb))
     return
