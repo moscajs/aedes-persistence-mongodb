@@ -476,7 +476,7 @@ function runTest (client, db) {
                 instance.destroy(t.pass.bind(t))
                 emitter.close(t.end.bind(t))
               })
-            }, 60000)
+            }, 65000)
           })
         })
       })
