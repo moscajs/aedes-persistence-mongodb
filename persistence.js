@@ -14,7 +14,6 @@ var qlobberOpts = {
   wildcard_one: '+',
   wildcard_some: '#'
 }
-const EXPIRY_SECONDS = 86400
 
 function MongoPersistence (opts) {
   if (!(this instanceof MongoPersistence)) {
@@ -83,11 +82,16 @@ MongoPersistence.prototype._setup = function () {
       incoming: incoming
     }
 
-    subscriptions.createIndex({ 'added': 1 }, { expireAfterSeconds: (that._opts.ttl.subscriptions || EXPIRY_SECONDS) })
-    retained.createIndex({ 'added': 1 }, { expireAfterSeconds: (that._opts.ttl.packets || EXPIRY_SECONDS) })
-    will.createIndex({ 'added': 1 }, { expireAfterSeconds: (that._opts.ttl.packets || EXPIRY_SECONDS) })
-    outgoing.createIndex({ 'added': 1 }, { expireAfterSeconds: (that._opts.ttl.packets || EXPIRY_SECONDS) })
-    incoming.createIndex({ 'added': 1 }, { expireAfterSeconds: (that._opts.ttl.packets || EXPIRY_SECONDS) })
+    if (that._opts.ttl.subscriptions) {
+      subscriptions.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.subscriptions })
+    }
+
+    if (that._opts.ttl.packets) {
+      retained.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.packets })
+      will.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.packets })
+      outgoing.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.packets })
+      incoming.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.packets })
+    }
 
     subscriptions.find({
       qos: { $gte: 0 }
