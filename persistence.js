@@ -21,6 +21,7 @@ function MongoPersistence (opts) {
   }
 
   opts = opts || {}
+  opts.ttl = opts.ttl || {}
 
   this._opts = opts
   this._db = null
@@ -68,13 +69,28 @@ MongoPersistence.prototype._setup = function () {
     }
 
     var subscriptions = db.collection('subscriptions')
+    var retained = db.collection('retained')
+    var will = db.collection('will')
+    var outgoing = db.collection('outgoing')
+    var incoming = db.collection('incoming')
 
     that._cl = {
       subscriptions: subscriptions,
-      retained: db.collection('retained'),
-      will: db.collection('will'),
-      outgoing: db.collection('outgoing'),
-      incoming: db.collection('incoming')
+      retained: retained,
+      will: will,
+      outgoing: outgoing,
+      incoming: incoming
+    }
+
+    if (that._opts.ttl.subscriptions) {
+      subscriptions.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.subscriptions })
+    }
+
+    if (that._opts.ttl.packets) {
+      retained.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.packets })
+      will.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.packets })
+      outgoing.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.packets })
+      incoming.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.packets })
     }
 
     subscriptions.find({
@@ -89,6 +105,13 @@ MongoPersistence.prototype._setup = function () {
   })
 }
 
+function decoratePacket (packet, opts) {
+  if (opts.ttl.packets) {
+    packet.added = new Date()
+  }
+  return packet
+}
+
 MongoPersistence.prototype.storeRetained = function (packet, cb) {
   if (!this.ready) {
     this.once('ready', this.storeRetained.bind(this, packet, cb))
@@ -96,7 +119,7 @@ MongoPersistence.prototype.storeRetained = function (packet, cb) {
   }
   var criteria = { topic: packet.topic }
   if (packet.payload.length > 0) {
-    this._cl.retained.updateOne(criteria, { $set: packet }, { upsert: true }, cb)
+    this._cl.retained.updateOne(criteria, { $set: decoratePacket(packet, this._opts) }, { upsert: true }, cb)
   } else {
     this._cl.retained.deleteOne(criteria, cb)
   }
@@ -131,25 +154,36 @@ MongoPersistence.prototype.createRetainedStream = function (pattern) {
   )
 }
 
+function decorateSubscription (sub, opts) {
+  if (opts.ttl.subscriptions) {
+    sub.added = new Date()
+  }
+  return sub
+}
+
 MongoPersistence.prototype.addSubscriptions = function (client, subs, cb) {
   if (!this.ready) {
     this.once('ready', this.addSubscriptions.bind(this, client, subs, cb))
     return
   }
 
+  var that = this
   var published = 0
   var errored = false
   var bulk = this._cl.subscriptions.initializeOrderedBulkOp()
   subs
     .forEach(function (sub) {
-      bulk.find({
-        clientId: client.id,
-        topic: sub.topic
-      }).upsert().updateOne({
+      var subscription = {
         clientId: client.id,
         topic: sub.topic,
         qos: sub.qos
-      })
+      }
+      bulk.find({
+        clientId: client.id,
+        topic: sub.topic
+      }).upsert().updateOne(
+        decorateSubscription(subscription, that._opts)
+      )
     })
 
   this._addedSubscriptions(client, subs, function (err) {
@@ -278,9 +312,11 @@ MongoPersistence.prototype.outgoingEnqueue = function (sub, packet, cb) {
     return
   }
 
+  var newp = new Packet(packet)
+
   this._cl.outgoing.insertOne({
     clientId: sub.clientId,
-    packet: new Packet(packet)
+    packet: decoratePacket(newp, this._opts)
   }, cb)
 }
 
@@ -382,7 +418,7 @@ MongoPersistence.prototype.incomingStorePacket = function (client, packet, cb) {
 
   this._cl.incoming.insertOne({
     clientId: client.id,
-    packet: newp
+    packet: decoratePacket(newp, this._opts)
   }, cb)
 }
 
@@ -438,7 +474,7 @@ MongoPersistence.prototype.putWill = function (client, packet, cb) {
   packet.brokerId = this.broker.id
   this._cl.will.insertOne({
     clientId: client.id,
-    packet: packet
+    packet: decoratePacket(packet, this._opts)
   }, function (err) {
     cb(err, client)
   })

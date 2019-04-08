@@ -354,4 +354,132 @@ function runTest (client, db) {
       })
     })
   })
+
+  test('look up for expire after seconds index', function (t) {
+    t.plan(6)
+
+    clean(db, cleanopts, function (err) {
+      t.error(err)
+
+      dbopts.ttl = {
+        packets: 1,
+        subscriptions: 1
+      }
+      var emitter = mqemitterMongo(dbopts)
+
+      emitter.status.on('stream', function () {
+        t.pass('mqemitter ready')
+        var instance = persistence(dbopts)
+        instance.broker = toBroker('1', emitter)
+
+        instance.on('ready', function () {
+          t.pass('instance ready')
+
+          db.collection('retained').indexInformation({ full: true }, function (err, indexes) {
+            t.notOk(err, 'no error')
+            t.deepEqual({ added: 1 }, indexes[1].key, 'must return the index key')
+
+            instance.destroy(t.pass.bind(t))
+            emitter.close(t.end.bind(t))
+          })
+        })
+      })
+    })
+  })
+
+  test('look up for packet with added property', function (t) {
+    t.plan(7)
+
+    clean(db, cleanopts, function (err) {
+      t.error(err)
+
+      dbopts.ttl = {
+        packets: 1,
+        subscriptions: 1
+      }
+      var emitter = mqemitterMongo(dbopts)
+
+      emitter.status.on('stream', function () {
+        t.pass('mqemitter ready')
+        var instance = persistence(dbopts)
+        instance.broker = toBroker('2', emitter)
+
+        instance.on('ready', function () {
+          t.pass('instance ready')
+
+          var date = new Date()
+          var packet = {
+            cmd: 'publish',
+            id: instance.broker.id,
+            topic: 'hello/world',
+            payload: Buffer.from('muahah'),
+            qos: 0,
+            retain: true,
+            added: date
+          }
+
+          instance.storeRetained(packet, function (err) {
+            t.notOk(err, 'no error')
+
+            db.collection('retained').findOne({ topic: 'hello/world' }, function (err, result) {
+              t.notOk(err, 'no error')
+              t.deepEqual(date, result.added, 'must return the packet')
+
+              instance.destroy(t.pass.bind(t))
+              emitter.close(t.end.bind(t))
+            })
+          })
+        })
+      })
+    })
+  })
+
+  test('look up for expired packets', function (t) {
+    t.plan(7)
+
+    clean(db, cleanopts, function (err) {
+      t.error(err)
+
+      dbopts.ttl = {
+        packets: 1,
+        subscriptions: 1
+      }
+      var emitter = mqemitterMongo(dbopts)
+
+      emitter.status.on('stream', function () {
+        t.pass('mqemitter ready')
+        var instance = persistence(dbopts)
+        instance.broker = toBroker('2', emitter)
+
+        instance.on('ready', function () {
+          t.pass('instance ready')
+
+          var date = new Date()
+          var packet = {
+            cmd: 'publish',
+            id: instance.broker.id,
+            topic: 'hello/world',
+            payload: Buffer.from('muahah'),
+            qos: 0,
+            retain: true,
+            added: date
+          }
+
+          instance.storeRetained(packet, function (err) {
+            t.notOk(err, 'no error')
+
+            setTimeout(function () {
+              db.collection('retained').findOne({ topic: 'hello/world' }, function (err, result) {
+                t.notOk(err, 'no error')
+                t.equal(null, result, 'must return empty packet')
+
+                instance.destroy(t.pass.bind(t))
+                emitter.close(t.end.bind(t))
+              })
+            }, 65000)
+          })
+        })
+      })
+    })
+  })
 }
