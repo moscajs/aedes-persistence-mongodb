@@ -41,7 +41,7 @@ MongoPersistence.prototype._connect = function (cb) {
   var conn = this._opts.url || 'mongodb://127.0.0.1/aedes'
 
   // TODO add options
-  mongodb.MongoClient.connect(conn, { useNewUrlParser: true }, cb)
+  mongodb.MongoClient.connect(conn, { useNewUrlParser: true, useUnifiedTopology: true }, cb)
 }
 
 MongoPersistence.prototype._setup = function () {
