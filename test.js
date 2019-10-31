@@ -434,6 +434,35 @@ function runTest (client, db) {
     })
   })
 
+  test('construct with database option', function (t) {
+    t.plan(3)
+
+    clean(db, cleanopts, function (err) {
+      t.error(err)
+      var dbopts = {
+        url: mongourl,
+        database: 'test-custom-db-name',
+        ttl: {
+          packets: 1,
+          subscriptions: 1
+        }
+      }
+      var emitter = mqemitterMongo(dbopts)
+
+      emitter.status.on('stream', function () {
+        var instance = persistence(dbopts)
+        instance.broker = toBroker('1', emitter)
+
+        instance.on('ready', function () {
+          t.equal(instance._db.databaseName, 'test-custom-db-name')
+
+          instance.destroy(t.pass.bind(t))
+          emitter.close(t.end.bind(t))
+        })
+      })
+    })
+  })
+
   test('look up for expired packets', function (t) {
     t.plan(7)
 
