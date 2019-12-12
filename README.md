@@ -30,12 +30,39 @@ aedesPersistenceMongoDB({
   }
 })
 ```
-Or
+
+With the previous configuration all packets will have a ttl of 300 seconds. You can also provide different ttl settings for each collection:
+
+```js
+ttl: {
+      packets: {
+        incoming: 100,
+        outgoing: 100,
+        will: 300,
+        retained: -1
+      }, // Number of seconds
+      subscriptions: 300,
+}
 ```
+
+If you want a specific collection to be **persistent** just set a ttl of `-1`.
+
+If you want to reuse an existing MongoDb instance just set the `db` option:
+
+```js
 aedesPersistenceMongoDB({
  db:db
 })
 ```
+
+With mongoose:
+
+```js
+aedesPersistenceMongoDB({
+ db: mongoose.connection.useDb('myDbName')
+})
+```
+
 ## License
 
 MIT

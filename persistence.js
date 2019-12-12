@@ -1,7 +1,7 @@
 'use strict'
 
 var util = require('util')
-var urlModule = require('url')
+var urlModule = require('native-url')
 var escape = require('escape-string-regexp')
 var CachedPersistence = require('aedes-cached-persistence')
 var Packet = CachedPersistence.Packet
@@ -22,6 +22,15 @@ function MongoPersistence (opts) {
 
   opts = opts || {}
   opts.ttl = opts.ttl || {}
+
+  if (typeof opts.ttl.packets === 'number') {
+    opts.ttl.packets = {
+      retained: opts.ttl.packets,
+      will: opts.ttl.packets,
+      outgoing: opts.ttl.packets,
+      incoming: opts.ttl.packets
+    }
+  }
 
   this._opts = opts
   this._db = null
@@ -51,7 +60,7 @@ MongoPersistence.prototype._setup = function () {
 
   var that = this
 
-  this._connect(function (err, client) {
+  this._connect(async function (err, client) {
     if (err) {
       this.emit('error', err)
       return
@@ -82,15 +91,33 @@ MongoPersistence.prototype._setup = function () {
       incoming: incoming
     }
 
+    // drop existing indexes
+    await subscriptions.dropIndexes()
+    await retained.dropIndexes()
+    await will.dropIndexes()
+    await outgoing.dropIndexes()
+    await incoming.dropIndexes()
+
     if (that._opts.ttl.subscriptions) {
-      subscriptions.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.subscriptions })
+      subscriptions.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.subscriptions })
     }
 
     if (that._opts.ttl.packets) {
-      retained.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.packets })
-      will.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.packets })
-      outgoing.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.packets })
-      incoming.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.packets })
+      if (that._opts.ttl.packets.retained >= 0) {
+        retained.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.retained })
+      }
+
+      if (that._opts.ttl.packets.will >= 0) {
+        will.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.will })
+      }
+
+      if (that._opts.ttl.packets.outgoing >= 0) {
+        outgoing.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.outgoing })
+      }
+
+      if (that._opts.ttl.packets.incoming >= 0) {
+        incoming.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.incoming })
+      }
     }
 
     subscriptions.find({
@@ -226,7 +253,7 @@ MongoPersistence.prototype.removeSubscriptions = function (client, subs, cb) {
       bulk.find({
         clientId: client.id,
         topic: topic
-      }).removeOne()
+      }).deleteOne()
     })
 
   bulk.execute(finish)
@@ -532,7 +559,7 @@ MongoPersistence.prototype.getClientList = function (topic) {
   var query = {}
 
   if (topic) {
-    query['topic'] = topic
+    query.topic = topic
   }
 
   return pump(this._cl.subscriptions.find(query), through.obj(function asPacket (obj, enc, cb) {
@@ -541,6 +568,6 @@ MongoPersistence.prototype.getClientList = function (topic) {
   }))
 }
 
-function noop () {}
+function noop () { }
 
 module.exports = MongoPersistence
