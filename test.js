@@ -9,10 +9,10 @@ var clean = require('mongo-clean')
 var dbname = 'aedes-test'
 var mongourl = 'mongodb://127.0.0.1/' + dbname
 var cleanopts = {
-  action: 'remove'
+  action: 'deleteMany'
 }
 
-MongoClient.connect(mongourl, { useNewUrlParser: true, w: 1 }, function (err, client) {
+MongoClient.connect(mongourl, { useNewUrlParser: true, useUnifiedTopology: true, w: 1 }, function (err, client) {
   if (err) {
     throw err
   }
