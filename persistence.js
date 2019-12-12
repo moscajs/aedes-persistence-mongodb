@@ -91,32 +91,33 @@ MongoPersistence.prototype._setup = function () {
       incoming: incoming
     }
 
-    // drop existing indexes
-    await subscriptions.dropIndexes()
-    await retained.dropIndexes()
-    await will.dropIndexes()
-    await outgoing.dropIndexes()
-    await incoming.dropIndexes()
+    var collections = await db.collections()
+
+    for (let i = 0; i < collections.length; i++) {
+      if (await collections[i].indexExists('ttl')) {
+        await collections[i].dropIndex('ttl')
+      }
+    }
 
     if (that._opts.ttl.subscriptions) {
-      subscriptions.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.subscriptions })
+      subscriptions.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.subscriptions, name: 'ttl' })
     }
 
     if (that._opts.ttl.packets) {
       if (that._opts.ttl.packets.retained >= 0) {
-        retained.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.retained })
+        retained.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.retained, name: 'ttl' })
       }
 
       if (that._opts.ttl.packets.will >= 0) {
-        will.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.will })
+        will.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.will, name: 'ttl' })
       }
 
       if (that._opts.ttl.packets.outgoing >= 0) {
-        outgoing.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.outgoing })
+        outgoing.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.outgoing, name: 'ttl' })
       }
 
       if (that._opts.ttl.packets.incoming >= 0) {
-        incoming.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.incoming })
+        incoming.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.incoming, name: 'ttl' })
       }
     }
 
@@ -152,13 +153,6 @@ MongoPersistence.prototype.storeRetained = function (packet, cb) {
   }
 }
 
-function filterStream (pattern) {
-  var instance = through.obj(filterPattern)
-  instance.matcher = new Qlobber(qlobberOpts)
-  instance.matcher.add(pattern, true)
-  return instance
-}
-
 function filterPattern (chunk, enc, cb) {
   if (this.matcher.match(chunk.topic).length > 0) {
     chunk.payload = chunk.payload.buffer
@@ -172,12 +166,27 @@ function filterPattern (chunk, enc, cb) {
 }
 
 MongoPersistence.prototype.createRetainedStream = function (pattern) {
-  var actual = escape(pattern).replace(/(#|\\\+).*$/, '')
+  return this.createRetainedStreamCombi([pattern])
+}
+
+MongoPersistence.prototype.createRetainedStreamCombi = function (patterns) {
+  var regex = []
+
+  var instance = through.obj(filterPattern)
+  instance.matcher = new Qlobber(qlobberOpts)
+
+  for (let i = 0; i < patterns.length; i++) {
+    instance.matcher.add(patterns[i], true)
+    regex.push(escape(patterns[i]).replace(/(#|\\\+).*$/, ''))
+  }
+
+  regex = regex.join('|')
+
   return pump(
     this._cl.retained.find({
-      topic: new RegExp(actual)
+      topic: new RegExp(regex)
     }),
-    filterStream(pattern)
+    instance
   )
 }
 
@@ -334,17 +343,32 @@ MongoPersistence.prototype.destroy = function (cb) {
 }
 
 MongoPersistence.prototype.outgoingEnqueue = function (sub, packet, cb) {
+  this.outgoingEnqueueCombi([sub], packet, cb)
+}
+
+MongoPersistence.prototype.outgoingEnqueueCombi = function (subs, packet, cb) {
   if (!this.ready) {
-    this.once('ready', this.outgoingEnqueue.bind(this, sub, packet, cb))
+    this.once('ready', this.outgoingEnqueueCombi.bind(this, subs, packet, cb))
     return
   }
 
-  var newp = new Packet(packet)
+  if (!subs || subs.length === 0) {
+    return cb(null, packet)
+  }
 
-  this._cl.outgoing.insertOne({
-    clientId: sub.clientId,
-    packet: decoratePacket(newp, this._opts)
-  }, cb)
+  var newp = new Packet(packet)
+  var opts = this._opts
+
+  function createPacket (sub) {
+    return {
+      clientId: sub.clientId,
+      packet: decoratePacket(newp, opts)
+    }
+  }
+
+  this._cl.outgoing.insertMany(subs.map(createPacket), function (err) {
+    cb(err, packet)
+  })
 }
 
 function asPacket (obj, enc, cb) {
