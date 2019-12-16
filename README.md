@@ -59,7 +59,7 @@ With mongoose:
 
 ```js
 aedesPersistenceMongoDB({
- db: mongoose.connection.useDb('myDbName')
+ db: mongoose.connection.useDb('myDbName').db
 })
 ```
 
