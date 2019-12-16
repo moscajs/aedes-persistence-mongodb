@@ -41,15 +41,14 @@ function MongoPersistence (opts) {
 
 util.inherits(MongoPersistence, CachedPersistence)
 
-MongoPersistence.prototype._connect = function (cb) {
+MongoPersistence.prototype._connect = async function (cb) {
   if (this._opts.db) {
-    cb(null, this._opts.db)
+    await cb(null, this._opts.db)
     return
   }
 
   var conn = this._opts.url || 'mongodb://127.0.0.1/aedes'
 
-  // TODO add options
   mongodb.MongoClient.connect(conn, { useNewUrlParser: true, useUnifiedTopology: true }, cb)
 }
 

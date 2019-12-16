@@ -16,7 +16,7 @@ npm i aedes aedes-persistence-mongodb --save
 ### aedesPersistenceMongoDB([opts])
 
 Creates a new instance of aedes-persistence-mongodb.
-It accepts a connections string url or you can pass your existing db object. Also, you can choose to set a ttl (time to live) for your subscribers or packets. This option will help you to empty your db from keeping useless data.
+It accepts a connections string `url` or you can pass your existing `db` object. Also, you can choose to set a `ttl` (time to live) for your subscribers or packets. This option will help you to empty your db from keeping useless data.
 
 Example:
 
