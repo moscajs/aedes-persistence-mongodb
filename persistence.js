@@ -98,7 +98,7 @@ MongoPersistence.prototype._setup = function () {
       }
     }
 
-    if (that._opts.ttl.subscriptions) {
+    if (that._opts.ttl.subscriptions >= 0) {
       subscriptions.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.subscriptions, name: 'ttl' })
     }
 
