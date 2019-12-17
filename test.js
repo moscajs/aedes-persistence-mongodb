@@ -423,7 +423,7 @@ function runTest (client, db) {
 
             db.collection('retained').findOne({ topic: 'hello/world' }, function (err, result) {
               t.notOk(err, 'no error')
-              t.deepEqual(date, result.added, 'must return the packet')
+              t.equal(date.getTime(), result.added.getTime(), 'must return the packet')
 
               instance.destroy(t.pass.bind(t))
               emitter.close(t.end.bind(t))
