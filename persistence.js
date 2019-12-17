@@ -41,9 +41,9 @@ function MongoPersistence (opts) {
 
 util.inherits(MongoPersistence, CachedPersistence)
 
-MongoPersistence.prototype._connect = async function (cb) {
+MongoPersistence.prototype._connect = function (cb) {
   if (this._opts.db) {
-    await cb(null, this._opts.db)
+    cb(null, this._opts.db)
     return
   }
 
@@ -59,7 +59,7 @@ MongoPersistence.prototype._setup = function () {
 
   var that = this
 
-  this._connect(async function (err, client) {
+  this._connect(function (err, client) {
     if (err) {
       this.emit('error', err)
       return
@@ -90,45 +90,68 @@ MongoPersistence.prototype._setup = function () {
       incoming: incoming
     }
 
-    var collections = await db.collections()
+    that._dropIndexes(db, function () {
+      if (that._opts.ttl.subscriptions >= 0) {
+        subscriptions.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.subscriptions, name: 'ttl' })
+      }
+
+      if (that._opts.ttl.packets) {
+        if (that._opts.ttl.packets.retained >= 0) {
+          retained.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.retained, name: 'ttl' })
+        }
+
+        if (that._opts.ttl.packets.will >= 0) {
+          will.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.will, name: 'ttl' })
+        }
+
+        if (that._opts.ttl.packets.outgoing >= 0) {
+          outgoing.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.outgoing, name: 'ttl' })
+        }
+
+        if (that._opts.ttl.packets.incoming >= 0) {
+          incoming.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.incoming, name: 'ttl' })
+        }
+      }
+
+      subscriptions.find({
+        qos: { $gte: 0 }
+      }).on('data', function (chunk) {
+        that._trie.add(chunk.topic, chunk)
+      }).on('end', function () {
+        that.emit('ready')
+      }).on('error', function (err) {
+        that.emit('error', err)
+      })
+    })
+  })
+}
+
+MongoPersistence.prototype._dropIndexes = function (db, cb) {
+  db.collections(function (err, collections) {
+    if (err) throw err
+
+    var done = 0
+
+    function finish (err) {
+      if (err) throw err
+
+      done++
+      if (done === collections.length && typeof cb === 'function') {
+        cb()
+      }
+    }
 
     for (let i = 0; i < collections.length; i++) {
-      if (await collections[i].indexExists('ttl')) {
-        await collections[i].dropIndex('ttl')
-      }
+      collections[i].indexExists('ttl', function (err, exists) {
+        if (err) throw err
+
+        if (exists) {
+          collections[i].dropIndex('ttl', finish)
+        } else {
+          finish()
+        }
+      })
     }
-
-    if (that._opts.ttl.subscriptions >= 0) {
-      subscriptions.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.subscriptions, name: 'ttl' })
-    }
-
-    if (that._opts.ttl.packets) {
-      if (that._opts.ttl.packets.retained >= 0) {
-        retained.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.retained, name: 'ttl' })
-      }
-
-      if (that._opts.ttl.packets.will >= 0) {
-        will.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.will, name: 'ttl' })
-      }
-
-      if (that._opts.ttl.packets.outgoing >= 0) {
-        outgoing.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.outgoing, name: 'ttl' })
-      }
-
-      if (that._opts.ttl.packets.incoming >= 0) {
-        incoming.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.incoming, name: 'ttl' })
-      }
-    }
-
-    subscriptions.find({
-      qos: { $gte: 0 }
-    }).on('data', function (chunk) {
-      that._trie.add(chunk.topic, chunk)
-    }).on('end', function () {
-      that.emit('ready')
-    }).on('error', function (err) {
-      that.emit('error', err)
-    })
   })
 }
 
