@@ -90,6 +90,7 @@ MongoPersistence.prototype._setup = function () {
       incoming: incoming
     }
 
+    // drop existing indexes
     that._dropIndexes(db, function () {
       if (that._opts.ttl.subscriptions >= 0) {
         subscriptions.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.subscriptions, name: 'ttl' })
