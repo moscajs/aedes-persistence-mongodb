@@ -249,22 +249,14 @@ MongoPersistence.prototype.addSubscriptions = function (client, subs, cb) {
       )
     })
 
-  this._addedSubscriptions(client, subs, function (err) {
-    finish(err)
-    bulk.execute(finish)
-  })
+  bulk.execute(finish)
+  this._addedSubscriptions(client, subs, finish)
 
   function finish (err) {
-    if (err && !errored) {
-      errored = true
-      cb(err, client)
-      return
-    } else if (errored) {
-      return
-    }
+    errored = err
     published++
     if (published === 2) {
-      cb(null, client)
+      cb(errored, client)
     }
   }
 }
