@@ -434,7 +434,7 @@ function runTest (client, db) {
     })
   })
 
-  test.only('drop existing indexes', function (t) {
+  test('drop existing indexes', function (t) {
     function checkIndexes (shouldExist, cb) {
       db.collections(function (err, collections) {
         t.notOk(err, 'no error')
