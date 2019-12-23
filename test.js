@@ -434,6 +434,76 @@ function runTest (client, db) {
     })
   })
 
+  test.only('drop existing indexes', function (t) {
+    function checkIndexes (shouldExist, cb) {
+      db.collections(function (err, collections) {
+        t.notOk(err, 'no error')
+        if (collections.length === 0) {
+          cb()
+        } else {
+          var done = 0
+          for (let i = 0; i < collections.length; i++) {
+            collections[i].indexExists('ttl', function (err, exists) {
+              t.notOk(err, 'no error')
+              if (collections[i].namespace.indexOf('pubsub') < 0) { // pubsub is the collection created by mqemitter-mongodb
+                t.equal(shouldExist, exists, 'Index on ' + collections[i].namespace + ' should' + (shouldExist ? '' : ' not') + ' exist')
+              }
+              if (++done >= collections.length) {
+                cb()
+              }
+            })
+          }
+        }
+      })
+    }
+
+    clean(db, cleanopts, function (err) {
+      t.notOk(err, 'no error')
+
+      dbopts.ttl = {
+        packets: 1,
+        subscriptions: 1
+      }
+      var emitter = mqemitterMongo(dbopts)
+
+      emitter.status.on('stream', function () {
+        t.pass('mqemitter ready')
+
+        var instance = persistence(dbopts)
+        instance.broker = toBroker('2', emitter)
+
+        instance.on('ready', function () {
+          t.pass('instance ready')
+
+          checkIndexes(true, function () {
+            delete dbopts.ttl
+            dbopts.dropExistingIndexes = true
+
+            instance.destroy(t.pass.bind(t, 'first instance dies'))
+            emitter.close(t.pass.bind(t, 'first emitter dies'))
+
+            var emitter2 = mqemitterMongo(dbopts)
+
+            emitter2.status.on('stream', function () {
+              t.pass('mqemitter ready')
+
+              var instance2 = persistence(dbopts)
+              instance2.broker = toBroker('2', emitter2)
+
+              instance2.on('ready', function () {
+                t.pass('instance ready')
+                checkIndexes(false, function () {
+                  instance2.destroy(t.pass.bind(t, 'second instance dies'))
+                  emitter2.close(t.end.bind(t))
+                })
+              })
+            })
+          })
+        })
+      })
+    })
+  })
+
   test('look up for expired packets', function (t) {
     t.plan(7)
 
@@ -476,7 +546,7 @@ function runTest (client, db) {
                 instance.destroy(t.pass.bind(t))
                 emitter.close(t.end.bind(t))
               })
-            }, 65000)
+            }, 65000) // MongoDB background task that removes expired documents runs every 60 seconds: https://docs.mongodb.com/manual/core/index-ttl/#timing-of-the-delete-operation
           })
         })
       })
