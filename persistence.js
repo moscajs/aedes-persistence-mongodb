@@ -90,8 +90,7 @@ MongoPersistence.prototype._setup = function () {
       incoming: incoming
     }
 
-    // drop existing indexes (if exists)
-    that._dropIndexes(db, function () {
+    function initCollections () {
       if (that._opts.ttl.subscriptions >= 0) {
         subscriptions.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.subscriptions, name: 'ttl' })
       }
@@ -123,7 +122,14 @@ MongoPersistence.prototype._setup = function () {
       }).on('error', function (err) {
         that.emit('error', err)
       })
-    })
+    }
+
+    // drop existing indexes (if exists)
+    if (that._opts.dropExistingIndexes) {
+      that._dropIndexes(db, initCollections)
+    } else {
+      initCollections()
+    }
   })
 }
 
