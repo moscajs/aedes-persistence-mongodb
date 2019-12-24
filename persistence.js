@@ -1,7 +1,7 @@
 'use strict'
 
 var util = require('util')
-var urlModule = require('url')
+var urlModule = require('native-url')
 var escape = require('escape-string-regexp')
 var CachedPersistence = require('aedes-cached-persistence')
 var Packet = CachedPersistence.Packet
@@ -23,6 +23,15 @@ function MongoPersistence (opts) {
   opts = opts || {}
   opts.ttl = opts.ttl || {}
 
+  if (typeof opts.ttl.packets === 'number') {
+    opts.ttl.packets = {
+      retained: opts.ttl.packets,
+      will: opts.ttl.packets,
+      outgoing: opts.ttl.packets,
+      incoming: opts.ttl.packets
+    }
+  }
+
   this._opts = opts
   this._db = null
   this._cl = null
@@ -40,7 +49,6 @@ MongoPersistence.prototype._connect = function (cb) {
 
   var conn = this._opts.url || 'mongodb://127.0.0.1/aedes'
 
-  // TODO add options
   mongodb.MongoClient.connect(conn, { useNewUrlParser: true, useUnifiedTopology: true }, cb)
 }
 
@@ -82,26 +90,79 @@ MongoPersistence.prototype._setup = function () {
       incoming: incoming
     }
 
-    if (that._opts.ttl.subscriptions) {
-      subscriptions.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.subscriptions })
+    function initCollections () {
+      if (that._opts.ttl.subscriptions >= 0) {
+        subscriptions.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.subscriptions, name: 'ttl' })
+      }
+
+      if (that._opts.ttl.packets) {
+        if (that._opts.ttl.packets.retained >= 0) {
+          retained.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.retained, name: 'ttl' })
+        }
+
+        if (that._opts.ttl.packets.will >= 0) {
+          will.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.will, name: 'ttl' })
+        }
+
+        if (that._opts.ttl.packets.outgoing >= 0) {
+          outgoing.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.outgoing, name: 'ttl' })
+        }
+
+        if (that._opts.ttl.packets.incoming >= 0) {
+          incoming.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.incoming, name: 'ttl' })
+        }
+      }
+
+      subscriptions.find({
+        qos: { $gte: 0 }
+      }).on('data', function (chunk) {
+        that._trie.add(chunk.topic, chunk)
+      }).on('end', function () {
+        that.emit('ready')
+      }).on('error', function (err) {
+        that.emit('error', err)
+      })
     }
 
-    if (that._opts.ttl.packets) {
-      retained.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.packets })
-      will.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.packets })
-      outgoing.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.packets })
-      incoming.createIndex({ 'added': 1 }, { expireAfterSeconds: that._opts.ttl.packets })
+    // drop existing indexes (if exists)
+    if (that._opts.dropExistingIndexes) {
+      that._dropIndexes(db, initCollections)
+    } else {
+      initCollections()
+    }
+  })
+}
+
+MongoPersistence.prototype._dropIndexes = function (db, cb) {
+  db.collections(function (err, collections) {
+    if (err) throw err
+
+    var done = 0
+
+    function finish (err) {
+      if (err) throw err
+
+      done++
+      if (done >= collections.length && typeof cb === 'function') {
+        cb()
+      }
     }
 
-    subscriptions.find({
-      qos: { $gte: 0 }
-    }).on('data', function (chunk) {
-      that._trie.add(chunk.topic, chunk)
-    }).on('end', function () {
-      that.emit('ready')
-    }).on('error', function (err) {
-      that.emit('error', err)
-    })
+    if (collections.length === 0) {
+      finish()
+    } else {
+      for (let i = 0; i < collections.length; i++) {
+        collections[i].indexExists('ttl', function (err, exists) {
+          if (err) throw err
+
+          if (exists) {
+            collections[i].dropIndex('ttl', finish)
+          } else {
+            finish()
+          }
+        })
+      }
+    }
   })
 }
 
@@ -125,13 +186,6 @@ MongoPersistence.prototype.storeRetained = function (packet, cb) {
   }
 }
 
-function filterStream (pattern) {
-  var instance = through.obj(filterPattern)
-  instance.matcher = new Qlobber(qlobberOpts)
-  instance.matcher.add(pattern, true)
-  return instance
-}
-
 function filterPattern (chunk, enc, cb) {
   if (this.matcher.match(chunk.topic).length > 0) {
     chunk.payload = chunk.payload.buffer
@@ -145,12 +199,27 @@ function filterPattern (chunk, enc, cb) {
 }
 
 MongoPersistence.prototype.createRetainedStream = function (pattern) {
-  var actual = escape(pattern).replace(/(#|\\\+).*$/, '')
+  return this.createRetainedStreamCombi([pattern])
+}
+
+MongoPersistence.prototype.createRetainedStreamCombi = function (patterns) {
+  var regex = []
+
+  var instance = through.obj(filterPattern)
+  instance.matcher = new Qlobber(qlobberOpts)
+
+  for (let i = 0; i < patterns.length; i++) {
+    instance.matcher.add(patterns[i], true)
+    regex.push(escape(patterns[i]).replace(/(#|\\\+).*$/, ''))
+  }
+
+  regex = regex.join('|')
+
   return pump(
     this._cl.retained.find({
-      topic: new RegExp(actual)
+      topic: new RegExp(regex)
     }),
-    filterStream(pattern)
+    instance
   )
 }
 
@@ -186,22 +255,14 @@ MongoPersistence.prototype.addSubscriptions = function (client, subs, cb) {
       )
     })
 
-  this._addedSubscriptions(client, subs, function (err) {
-    finish(err)
-    bulk.execute(finish)
-  })
+  bulk.execute(finish)
+  this._addedSubscriptions(client, subs, finish)
 
   function finish (err) {
-    if (err && !errored) {
-      errored = true
-      cb(err, client)
-      return
-    } else if (errored) {
-      return
-    }
+    errored = err
     published++
     if (published === 2) {
-      cb(null, client)
+      cb(errored, client)
     }
   }
 }
@@ -226,7 +287,7 @@ MongoPersistence.prototype.removeSubscriptions = function (client, subs, cb) {
       bulk.find({
         clientId: client.id,
         topic: topic
-      }).removeOne()
+      }).deleteOne()
     })
 
   bulk.execute(finish)
@@ -307,17 +368,32 @@ MongoPersistence.prototype.destroy = function (cb) {
 }
 
 MongoPersistence.prototype.outgoingEnqueue = function (sub, packet, cb) {
+  this.outgoingEnqueueCombi([sub], packet, cb)
+}
+
+MongoPersistence.prototype.outgoingEnqueueCombi = function (subs, packet, cb) {
   if (!this.ready) {
-    this.once('ready', this.outgoingEnqueue.bind(this, sub, packet, cb))
+    this.once('ready', this.outgoingEnqueueCombi.bind(this, subs, packet, cb))
     return
   }
 
-  var newp = new Packet(packet)
+  if (!subs || subs.length === 0) {
+    return cb(null, packet)
+  }
 
-  this._cl.outgoing.insertOne({
-    clientId: sub.clientId,
-    packet: decoratePacket(newp, this._opts)
-  }, cb)
+  var newp = new Packet(packet)
+  var opts = this._opts
+
+  function createPacket (sub) {
+    return {
+      clientId: sub.clientId,
+      packet: decoratePacket(newp, opts)
+    }
+  }
+
+  this._cl.outgoing.insertMany(subs.map(createPacket), function (err) {
+    cb(err, packet)
+  })
 }
 
 function asPacket (obj, enc, cb) {
@@ -532,7 +608,7 @@ MongoPersistence.prototype.getClientList = function (topic) {
   var query = {}
 
   if (topic) {
-    query['topic'] = topic
+    query.topic = topic
   }
 
   return pump(this._cl.subscriptions.find(query), through.obj(function asPacket (obj, enc, cb) {
@@ -541,6 +617,6 @@ MongoPersistence.prototype.getClientList = function (topic) {
   }))
 }
 
-function noop () {}
+function noop () { }
 
 module.exports = MongoPersistence

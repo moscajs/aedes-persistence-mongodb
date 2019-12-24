@@ -1,10 +1,9 @@
 language: node_js
 sudo: true
 node_js:
-  - "11"
+  - "12"
   - "10"
   - "8"
-  - "6"
 env:
   - MONGODB_VERSION="3.4.6"
 before_install:
