@@ -37,7 +37,9 @@ MongoClient.connect(mongourl, { useNewUrlParser: true, useUnifiedTopology: true,
 
 function runTest (client, db) {
   test.onFinish(function () {
-    client.close()
+    client.close(function () {
+      process.exit(0)
+    })
   })
 
   var dbopts = {
@@ -477,7 +479,7 @@ function runTest (client, db) {
         t.pass('mqemitter ready')
 
         var instance = persistence(dbopts)
-        instance.broker = toBroker('2', emitter)
+        instance.broker = toBroker('1', emitter)
 
         instance.on('ready', function () {
           t.pass('instance ready')
@@ -512,7 +514,7 @@ function runTest (client, db) {
   })
 
   test('look up for expired packets', function (t) {
-    t.plan(7)
+    t.plan(8)
 
     clean(db, cleanopts, function (err) {
       t.error(err)
@@ -526,7 +528,7 @@ function runTest (client, db) {
       emitter.status.on('stream', function () {
         t.pass('mqemitter ready')
         var instance = persistence(dbopts)
-        instance.broker = toBroker('2', emitter)
+        instance.broker = toBroker('1', emitter)
 
         instance.on('ready', function () {
           t.pass('instance ready')
@@ -542,18 +544,20 @@ function runTest (client, db) {
             added: date
           }
 
+          function checkRetained () {
+            db.collection('retained').findOne({ topic: 'hello/world' }, function (err, result) {
+              t.notOk(err, 'no error')
+              t.equal(null, result, 'must return empty packet')
+
+              instance.destroy(t.pass.bind(t, 'instance dies'))
+              emitter.close(t.pass.bind(t, 'emitter dies'))
+            })
+          }
+
           instance.storeRetained(packet, function (err) {
             t.notOk(err, 'no error')
 
-            setTimeout(function () {
-              db.collection('retained').findOne({ topic: 'hello/world' }, function (err, result) {
-                t.notOk(err, 'no error')
-                t.equal(null, result, 'must return empty packet')
-
-                instance.destroy(t.pass.bind(t))
-                emitter.close(t.end.bind(t))
-              })
-            }, 3000) // MongoDB background task that removes expired documents runs every 60 seconds: https://docs.mongodb.com/manual/core/index-ttl/#timing-of-the-delete-operation
+            setTimeout(checkRetained.bind(this), 3000) // https://docs.mongodb.com/manual/core/index-ttl/#timing-of-the-delete-operation
           })
         })
       })

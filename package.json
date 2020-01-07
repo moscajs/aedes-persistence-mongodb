@@ -35,13 +35,13 @@
     "mqemitter-mongodb": "^6.0.1",
     "pre-commit": "^1.2.2",
     "standard": "^12.0.1",
-    "tape": "^4.9.0"
+    "tape": "^4.12.1"
   },
   "dependencies": {
     "aedes-cached-persistence": "^8.0.0",
     "escape-string-regexp": "^1.0.5",
-    "mongodb": "^3.0.11",
-    "native-url": "^0.2.3",
+    "mongodb": "^3.4.1",
+    "native-url": "^0.2.4",
     "pump": "^3.0.0",
     "qlobber": "^3.0.2",
     "through2": "^3.0.0"
