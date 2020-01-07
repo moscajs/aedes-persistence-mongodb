@@ -513,7 +513,7 @@ function runTest (client, db) {
     })
   })
 
-  test.only('look up for expired packets', function (t) {
+  test('look up for expired packets', function (t) {
     t.plan(8)
 
     clean(db, cleanopts, function (err) {
