@@ -513,7 +513,7 @@ function runTest (client, db) {
     })
   })
 
-  test('look up for expired packets', function (t) {
+  test.only('look up for expired packets', function (t) {
     t.plan(8)
 
     clean(db, cleanopts, function (err) {
@@ -557,7 +557,7 @@ function runTest (client, db) {
           instance.storeRetained(packet, function (err) {
             t.notOk(err, 'no error')
 
-            setTimeout(checkRetained.bind(this), 3000) // https://docs.mongodb.com/manual/core/index-ttl/#timing-of-the-delete-operation
+            setTimeout(checkRetained.bind(this), 5000) // https://docs.mongodb.com/manual/core/index-ttl/#timing-of-the-delete-operation
           })
         })
       })
