@@ -38,7 +38,7 @@
     "tape": "^4.9.0"
   },
   "dependencies": {
-    "aedes-cached-persistence": "^7.0.0",
+    "aedes-cached-persistence": "^8.0.0",
     "escape-string-regexp": "^1.0.5",
     "mongodb": "^3.0.11",
     "native-url": "^0.2.3",

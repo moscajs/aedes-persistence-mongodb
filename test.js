@@ -19,12 +19,19 @@ MongoClient.connect(mongourl, { useNewUrlParser: true, useUnifiedTopology: true,
 
   var db = client.db(dbname)
 
-  clean(db, cleanopts, function (err, db) {
+  // set ttl task to run every 2 seconds
+  db.executeDbAdminCommand({ setParameter: 1, ttlMonitorSleepSecs: 2 }, function (err) {
     if (err) {
       throw err
     }
 
-    runTest(client, db)
+    clean(db, cleanopts, function (err, db) {
+      if (err) {
+        throw err
+      }
+
+      runTest(client, db)
+    })
   })
 })
 
@@ -546,7 +553,7 @@ function runTest (client, db) {
                 instance.destroy(t.pass.bind(t))
                 emitter.close(t.end.bind(t))
               })
-            }, 65000) // MongoDB background task that removes expired documents runs every 60 seconds: https://docs.mongodb.com/manual/core/index-ttl/#timing-of-the-delete-operation
+            }, 3000) // MongoDB background task that removes expired documents runs every 60 seconds: https://docs.mongodb.com/manual/core/index-ttl/#timing-of-the-delete-operation
           })
         })
       })
