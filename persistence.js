@@ -384,6 +384,8 @@ MongoPersistence.prototype.outgoingEnqueueCombi = function (subs, packet, cb) {
   var newp = new Packet(packet)
   var opts = this._opts
 
+  if (!newp.messageId) delete newp.messageId
+
   function createPacket (sub) {
     return {
       clientId: sub.clientId,
