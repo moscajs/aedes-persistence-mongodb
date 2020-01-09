@@ -15,6 +15,9 @@ var qlobberOpts = {
   wildcard_some: '#'
 }
 
+var bulkQueue = []
+var executing = false
+
 function MongoPersistence (opts) {
   if (!(this instanceof MongoPersistence)) {
     return new MongoPersistence(opts)
@@ -179,11 +182,33 @@ MongoPersistence.prototype.storeRetained = function (packet, cb) {
     return
   }
   var criteria = { topic: packet.topic }
+  var bulk = this._cl.retained.initializeOrderedBulkOp()
+
   if (packet.payload.length > 0) {
-    this._cl.retained.updateOne(criteria, { $set: decoratePacket(packet, this._opts) }, { upsert: true }, cb)
+    bulk.find(criteria).upsert().updateOne(decoratePacket(packet, this._opts))
   } else {
-    this._cl.retained.deleteOne(criteria, cb)
+    bulk.find(criteria).deleteOne()
   }
+
+  enqueueBulk(bulk, cb)
+}
+
+function enqueueBulk (bulk, cb) {
+  bulkQueue.unshift({ bulk, cb })
+  if (!executing) {
+    executing = true
+    doNext()
+  }
+}
+
+function doNext () {
+  if (bulkQueue.length > 0) {
+    var op = bulkQueue.pop()
+    op.bulk.execute(function () {
+      op.cb()
+      doNext()
+    })
+  } else executing = false
 }
 
 function filterPattern (chunk, enc, cb) {
