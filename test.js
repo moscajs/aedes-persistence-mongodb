@@ -396,7 +396,7 @@ function runTest (client, db) {
     })
   })
 
-  test('look up for packet with added property', function (t) {
+  test.only('look up for packet with added property', function (t) {
     t.plan(7)
 
     clean(db, cleanopts, function (err) {
@@ -432,8 +432,9 @@ function runTest (client, db) {
 
             db.collection('retained').findOne({ topic: 'hello/world' }, function (err, result) {
               t.notOk(err, 'no error')
-              t.equal(date.getTime(), result.added.getTime(), 'must return the packet')
-
+              delete result._id
+              result.payload = result.payload.buffer
+              t.deepEqual(packet, result, 'must return the packet')
               instance.destroy(t.pass.bind(t))
               emitter.close(t.end.bind(t))
             })
