@@ -396,7 +396,7 @@ function runTest (client, db) {
     })
   })
 
-  test.only('look up for packet with added property', function (t) {
+  test('look up for packet with added property', function (t) {
     t.plan(7)
 
     clean(db, cleanopts, function (err) {
