@@ -15,9 +15,6 @@ var qlobberOpts = {
   wildcard_some: '#'
 }
 
-var packetsQueue = []
-var executing = false
-
 function MongoPersistence (opts) {
   if (!(this instanceof MongoPersistence)) {
     return new MongoPersistence(opts)
@@ -38,6 +35,8 @@ function MongoPersistence (opts) {
   this._opts = opts
   this._db = null
   this._cl = null
+  this.packetsQueue = [] // used for storing retained packets with ordered bulks
+  this.executing = false // used as lock while a bulk is executing
 
   CachedPersistence.call(this, opts)
 }
@@ -182,18 +181,18 @@ MongoPersistence.prototype.storeRetained = function (packet, cb) {
     return
   }
 
-  packetsQueue.push({ packet, cb })
+  this.packetsQueue.push({ packet, cb })
   executeBulk(this)
 }
 
 function executeBulk (that) {
-  if (!executing && packetsQueue.length > 0) {
-    executing = true
+  if (!that.executing && that.packetsQueue.length > 0) {
+    that.executing = true
     var bulk = that._cl.retained.initializeOrderedBulkOp()
     var onEnd = []
 
-    while (packetsQueue.length) {
-      var p = packetsQueue.shift()
+    while (that.packetsQueue.length) {
+      var p = that.packetsQueue.shift()
       onEnd.push(p.cb)
       var criteria = { topic: p.packet.topic }
 
@@ -206,7 +205,7 @@ function executeBulk (that) {
 
     bulk.execute(function () {
       while (onEnd.length) onEnd.shift().call()
-      executing = false
+      that.executing = false
       executeBulk(that)
     })
   }
