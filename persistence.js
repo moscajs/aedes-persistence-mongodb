@@ -15,7 +15,7 @@ var qlobberOpts = {
   wildcard_some: '#'
 }
 
-var bulkQueue = []
+var packetsQueue = []
 var executing = false
 
 function MongoPersistence (opts) {
@@ -181,34 +181,35 @@ MongoPersistence.prototype.storeRetained = function (packet, cb) {
     this.once('ready', this.storeRetained.bind(this, packet, cb))
     return
   }
-  var criteria = { topic: packet.topic }
-  var bulk = this._cl.retained.initializeOrderedBulkOp()
 
-  if (packet.payload.length > 0) {
-    bulk.find(criteria).upsert().updateOne(decoratePacket(packet, this._opts))
-  } else {
-    bulk.find(criteria).deleteOne()
-  }
-
-  enqueueBulk(bulk, cb)
+  packetsQueue.push({ packet, cb })
+  executeBulk(this)
 }
 
-function enqueueBulk (bulk, cb) {
-  bulkQueue.unshift({ bulk, cb })
-  if (!executing) {
+function executeBulk (that) {
+  if (!executing && packetsQueue.length > 0) {
     executing = true
-    doNext()
-  }
-}
+    var bulk = that._cl.retained.initializeOrderedBulkOp()
+    var onEnd = []
 
-function doNext () {
-  if (bulkQueue.length > 0) {
-    var op = bulkQueue.pop()
-    op.bulk.execute(function () {
-      op.cb()
-      doNext()
+    while (packetsQueue.length) {
+      var p = packetsQueue.shift()
+      onEnd.push(p.cb)
+      var criteria = { topic: p.packet.topic }
+
+      if (p.packet.payload.length > 0) {
+        bulk.find(criteria).upsert().updateOne(decoratePacket(p.packet, that._opts))
+      } else {
+        bulk.find(criteria).deleteOne()
+      }
+    }
+
+    bulk.execute(function () {
+      while (onEnd.length) onEnd.shift().call()
+      executing = false
+      executeBulk(that)
     })
-  } else executing = false
+  }
 }
 
 function filterPattern (chunk, enc, cb) {
