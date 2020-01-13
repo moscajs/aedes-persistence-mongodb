@@ -35,7 +35,7 @@
     "mqemitter-mongodb": "^6.0.1",
     "pre-commit": "^1.2.2",
     "standard": "^12.0.1",
-    "tape": "^4.12.1"
+    "tape": "^4.13.0"
   },
   "dependencies": {
     "aedes-cached-persistence": "^8.0.0",
