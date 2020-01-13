@@ -48,6 +48,7 @@ function runTest (client, db) {
 
   abs({
     test: test,
+    waitForReady: true,
     buildEmitter: function () {
       var emitter = mqemitterMongo(dbopts)
       return emitter
