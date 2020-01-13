@@ -35,6 +35,8 @@ function MongoPersistence (opts) {
   this._opts = opts
   this._db = null
   this._cl = null
+  this.packetsQueue = [] // used for storing retained packets with ordered bulks
+  this.executing = false // used as lock while a bulk is executing
 
   CachedPersistence.call(this, opts)
 }
@@ -178,11 +180,34 @@ MongoPersistence.prototype.storeRetained = function (packet, cb) {
     this.once('ready', this.storeRetained.bind(this, packet, cb))
     return
   }
-  var criteria = { topic: packet.topic }
-  if (packet.payload.length > 0) {
-    this._cl.retained.updateOne(criteria, { $set: decoratePacket(packet, this._opts) }, { upsert: true }, cb)
-  } else {
-    this._cl.retained.deleteOne(criteria, cb)
+
+  this.packetsQueue.push({ packet, cb })
+  executeBulk(this)
+}
+
+function executeBulk (that) {
+  if (!that.executing && that.packetsQueue.length > 0) {
+    that.executing = true
+    var bulk = that._cl.retained.initializeOrderedBulkOp()
+    var onEnd = []
+
+    while (that.packetsQueue.length) {
+      var p = that.packetsQueue.shift()
+      onEnd.push(p.cb)
+      var criteria = { topic: p.packet.topic }
+
+      if (p.packet.payload.length > 0) {
+        bulk.find(criteria).upsert().updateOne(decoratePacket(p.packet, that._opts))
+      } else {
+        bulk.find(criteria).deleteOne()
+      }
+    }
+
+    bulk.execute(function () {
+      while (onEnd.length) onEnd.shift().call()
+      that.executing = false
+      executeBulk(that)
+    })
   }
 }
 
