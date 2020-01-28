@@ -1,5 +1,13 @@
 # aedes-persistence-mongodb
 
+![.github/workflows/ci.yml](https://github.com/robertsLando/aedes-persistence-mongodb/workflows/.github/workflows/ci.yml/badge.svg)
+[![Dependencies Status](https://david-dm.org/mcollina/aedes-persistence-mongodb/status.svg)](https://david-dm.org/mcollina/aedes-persistence-mongodb)
+[![devDependencies Status](https://david-dm.org/mcollina/aedes-persistence-mongodb/dev-status.svg)](https://david-dm.org/mcollina/aedes-persistence-mongodb?type=dev)
+\
+[![Known Vulnerabilities](https://snyk.io/test/github/mcollina/aedes-persistence-mongodb/badge.svg)](https://snyk.io/test/github/mcollina/aedes-persistence-mongodb)
+[![NPM version](https://img.shields.io/npm/v/aedes-persistence-mongodb.svg?style=flat)](https://npm.im/aedes-persistence-mongodb)
+[![NPM downloads](https://img.shields.io/npm/dm/aedes-persistence-mongodb.svg?style=flat)](https://npm.im/aedes-persistence-mongodb)
+
 [Aedes][aedes] [persistence][persistence], backed by [MongoDB][mongodb].
 
 See [aedes-persistence][persistence] for the full API, and [Aedes][aedes] for usage.
