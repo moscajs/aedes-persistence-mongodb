@@ -24,9 +24,9 @@ jobs:
         run: | 
           wget http://fastdl.mongodb.org/linux/mongodb-linux-x86_64-$MONGODB_VERSION.tgz
           tar xfz mongodb-linux-x86_64-$MONGODB_VERSION.tgz
-          export PATH=`pwd`/mongodb-linux-x86_64-$MONGODB_VERSION/bin:$PATH
+          sudo export PATH=`pwd`/mongodb-linux-x86_64-$MONGODB_VERSION/bin:$PATH
           mkdir -p data/db
-          mongod --dbpath=data/db --setParameter ttlMonitorSleepSecs=2 &
+          sudo mongod --dbpath=data/db --setParameter ttlMonitorSleepSecs=2 &
           sleep 5
       - name: Install
         run: |
