@@ -6,7 +6,6 @@ jobs:
     services:
             mongodb:
                 image: mongo:3.4.23
-                command: --setParameter ttlMonitorSleepSecs=2
                 ports:
                   - 27017:27017
     strategy:
