@@ -559,7 +559,7 @@ function runTest (client, db) {
           instance.storeRetained(packet, function (err) {
             t.notOk(err, 'no error')
 
-            setTimeout(checkRetained.bind(this), 65000) // https://docs.mongodb.com/manual/core/index-ttl/#timing-of-the-delete-operation
+            setTimeout(checkRetained.bind(this), 4000) // https://docs.mongodb.com/manual/core/index-ttl/#timing-of-the-delete-operation
           })
         })
       })
