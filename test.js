@@ -366,8 +366,6 @@ function runTest (client, db) {
   })
 
   test('look up for expire after seconds index', function (t) {
-    t.plan(6)
-
     clean(db, cleanopts, function (err) {
       t.error(err)
 
@@ -389,8 +387,8 @@ function runTest (client, db) {
             t.notOk(err, 'no error')
             t.deepEqual({ added: 1 }, indexes[1].key, 'must return the index key')
 
-            instance.destroy(() => {
-              t.pass.bind(t)
+            instance.destroy(function () {
+              t.pass('Instance dies')
               emitter.close(t.end.bind(t))
             })
           })
@@ -400,8 +398,6 @@ function runTest (client, db) {
   })
 
   test('look up for packet with added property', function (t) {
-    t.plan(7)
-
     clean(db, cleanopts, function (err) {
       t.error(err)
 
@@ -438,8 +434,8 @@ function runTest (client, db) {
               delete result._id
               result.payload = result.payload.buffer
               t.deepEqual(packet, result, 'must return the packet')
-              instance.destroy(() => {
-                t.pass.bind(t)
+              instance.destroy(function () {
+                t.pass('Instance dies')
                 emitter.close(t.end.bind(t))
               })
             })
