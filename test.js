@@ -389,8 +389,10 @@ function runTest (client, db) {
             t.notOk(err, 'no error')
             t.deepEqual({ added: 1 }, indexes[1].key, 'must return the index key')
 
-            instance.destroy(t.pass.bind(t))
-            emitter.close(t.end.bind(t))
+            instance.destroy(() => {
+              t.pass.bind(t)
+              emitter.close(t.end.bind(t))
+            })
           })
         })
       })
@@ -436,8 +438,10 @@ function runTest (client, db) {
               delete result._id
               result.payload = result.payload.buffer
               t.deepEqual(packet, result, 'must return the packet')
-              instance.destroy(t.pass.bind(t))
-              emitter.close(t.end.bind(t))
+              instance.destroy(() => {
+                t.pass.bind(t)
+                emitter.close(t.end.bind(t))
+              })
             })
           })
         })
