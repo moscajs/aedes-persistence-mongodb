@@ -31,6 +31,7 @@
   "devDependencies": {
     "concat-stream": "^2.0.0",
     "faucet": "0.0.1",
+    "license-checker": "^25.0.1",
     "mongo-clean": "^2.0.0",
     "mqemitter-mongodb": "^6.0.1",
     "pre-commit": "^1.2.2",
