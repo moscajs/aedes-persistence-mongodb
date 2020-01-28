@@ -22,7 +22,7 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - name: Install mongo
         run: | 
-          docker run --name mongo -d -p 27017:27017 mongo:latest mongo --setParameter ttlMonitorSleepSecs=2
+          docker run -d -p 27017:27017 mongo:latest mongod --setParameter ttlMonitorSleepSecs=2
       - name: Install
         run: |
           npm install
