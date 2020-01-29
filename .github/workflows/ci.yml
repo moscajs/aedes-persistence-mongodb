@@ -3,12 +3,6 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
-    # services:
-    #         mongodb:
-    #             image: mongo:4.2.3
-    #             command: --setParameter ttlMonitorSleepSecs=2
-    #             ports:
-    #               - 27017:27017
     strategy:
       matrix:
         node-version: [8.x, 10.x, 12.x, 13.x]
