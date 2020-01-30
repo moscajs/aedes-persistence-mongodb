@@ -5,6 +5,7 @@
 [![devDependencies Status](https://david-dm.org/moscajs/aedes-persistence-mongodb/dev-status.svg)](https://david-dm.org/moscajs/aedes-persistence-mongodb?type=dev)
 \
 [![Known Vulnerabilities](https://snyk.io/test/github/moscajs/aedes-persistence-mongodb/badge.svg)](https://snyk.io/test/github/moscajs/aedes-persistence-mongodb)
+[![Coverage Status](https://coveralls.io/repos/github/moscajs/aedes-persistence-mongodb/badge.svg?branch=master)](https://coveralls.io/github/moscajs/aedes-persistence-mongodb?branch=master)
 [![NPM version](https://img.shields.io/npm/v/aedes-persistence-mongodb.svg?style=flat)](https://npm.im/aedes-persistence-mongodb)
 [![NPM downloads](https://img.shields.io/npm/dm/aedes-persistence-mongodb.svg?style=flat)](https://npm.im/aedes-persistence-mongodb)
 
