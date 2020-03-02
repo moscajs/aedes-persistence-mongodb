@@ -37,9 +37,8 @@ MongoClient.connect(mongourl, { useNewUrlParser: true, useUnifiedTopology: true,
 
 function runTest (client, db) {
   test.onFinish(function () {
-    client.close(function () {
-      process.exit(0)
-    })
+    // close mongodb client connection
+    client.close()
   })
 
   var dbopts = {
