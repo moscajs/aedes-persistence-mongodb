@@ -20,6 +20,24 @@ jobs:
       - name: Install
         run: |
           npm install
+      - name: Check licenses
+        run: |
+          npm run license-checker
       - name: Run tests
         run: |
-          npm run test
+          npm run test:ci
+      - name: Coveralls Parallel
+        uses: coverallsapp/github-action@master
+        with:
+          github-token: ${{ secrets.github_token }}
+          parallel: true
+  
+  coverage:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Coveralls Finished
+        uses: coverallsapp/github-action@master
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          parallel-finished: true
