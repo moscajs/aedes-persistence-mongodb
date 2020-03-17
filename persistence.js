@@ -1,18 +1,19 @@
 'use strict'
 
-var util = require('util')
-var urlModule = require('native-url')
-var escape = require('escape-string-regexp')
-var CachedPersistence = require('aedes-cached-persistence')
-var Packet = CachedPersistence.Packet
-var mongodb = require('mongodb')
-var pump = require('pump')
-var through = require('through2')
-var Qlobber = require('qlobber').Qlobber
-var qlobberOpts = {
+const util = require('util')
+const urlModule = require('native-url')
+const escape = require('escape-string-regexp')
+const CachedPersistence = require('aedes-cached-persistence')
+const Packet = CachedPersistence.Packet
+const mongodb = require('mongodb')
+const pump = require('pump')
+const through = require('through2')
+const Qlobber = require('qlobber').Qlobber
+const qlobberOpts = {
   separator: '/',
   wildcard_one: '+',
-  wildcard_some: '#'
+  wildcard_some: '#',
+  match_empty_levels: true
 }
 
 function MongoPersistence (opts) {
@@ -49,7 +50,7 @@ MongoPersistence.prototype._connect = function (cb) {
     return
   }
 
-  var conn = this._opts.url || 'mongodb://127.0.0.1/aedes'
+  const conn = this._opts.url || 'mongodb://127.0.0.1/aedes'
 
   mongodb.MongoClient.connect(conn, { useNewUrlParser: true, useUnifiedTopology: true }, cb)
 }
@@ -408,8 +409,6 @@ MongoPersistence.prototype.outgoingEnqueueCombi = function (subs, packet, cb) {
 
   var newp = new Packet(packet)
   var opts = this._opts
-
-  if (!newp.messageId) delete newp.messageId
 
   function createPacket (sub) {
     return {
