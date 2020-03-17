@@ -1,6 +1,6 @@
 # aedes-persistence-mongodb
 
-![.github/workflows/ci.yml](https://github.com/robertsLando/aedes-persistence-mongodb/workflows/.github/workflows/ci.yml/badge.svg)
+![.github/workflows/ci.yml](https://github.com/moscajs/aedes-persistence-mongodb/workflows/.github/workflows/ci.yml/badge.svg)
 [![Dependencies Status](https://david-dm.org/moscajs/aedes-persistence-mongodb/status.svg)](https://david-dm.org/moscajs/aedes-persistence-mongodb)
 [![devDependencies Status](https://david-dm.org/moscajs/aedes-persistence-mongodb/dev-status.svg)](https://david-dm.org/moscajs/aedes-persistence-mongodb?type=dev)
 \
