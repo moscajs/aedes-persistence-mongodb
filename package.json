@@ -56,17 +56,17 @@
     "license-checker": "^25.0.1",
     "mongo-clean": "^2.0.0",
     "mqemitter-mongodb": "^7.0.0",
-    "pre-commit": "^1.2.2",
-    "release-it": "^12.6.2",
     "nyc": "^15.0.0",
+    "pre-commit": "^1.2.2",
+    "release-it": "^13.1.1",
     "snazzy": "^8.0.0",
-    "standard": "^14.3.1",
-    "tape": "^4.13.0"
+    "standard": "^14.3.3",
+    "tape": "^4.13.2"
   },
   "dependencies": {
     "aedes-cached-persistence": "^8.1.0",
     "escape-string-regexp": "^2.0.0",
-    "mongodb": "^3.5.2",
+    "mongodb": "^3.5.5",
     "native-url": "^0.2.6",
     "pump": "^3.0.0",
     "qlobber": "^5.0.0",
