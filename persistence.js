@@ -236,7 +236,7 @@ MongoPersistence.prototype.createRetainedStreamCombi = function (patterns) {
 
   for (let i = 0; i < patterns.length; i++) {
     instance.matcher.add(patterns[i], true)
-    regex.push(escape(patterns[i]).replace(/(#|\\\+).*$/, ''))
+    regex.push(escape(patterns[i]).replace(/(\/#|\\\+).*$/, ''))
   }
 
   regex = regex.join('|')
