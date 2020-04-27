@@ -65,7 +65,7 @@
   },
   "dependencies": {
     "aedes-cached-persistence": "^8.1.0",
-    "escape-string-regexp": "^2.0.0",
+    "escape-string-regexp": "^4.0.0",
     "mongodb": "^3.5.5",
     "native-url": "^0.3.1",
     "pump": "^3.0.0",
