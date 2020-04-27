@@ -67,7 +67,7 @@
     "aedes-cached-persistence": "^8.1.0",
     "escape-string-regexp": "^2.0.0",
     "mongodb": "^3.5.5",
-    "native-url": "^0.2.6",
+    "native-url": "^0.3.1",
     "pump": "^3.0.0",
     "qlobber": "^5.0.0",
     "through2": "^3.0.0"
