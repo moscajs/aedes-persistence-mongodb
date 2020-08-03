@@ -198,7 +198,9 @@ function executeBulk (that) {
       var criteria = { topic: p.packet.topic }
 
       if (p.packet.payload.length > 0) {
-        bulk.find(criteria).upsert().updateOne(decoratePacket(p.packet, that._opts))
+        bulk.find(criteria).upsert().updateOne({
+          $set: decoratePacket(p.packet, that._opts)
+        })
       } else {
         bulk.find(criteria).deleteOne()
       }
@@ -276,9 +278,9 @@ MongoPersistence.prototype.addSubscriptions = function (client, subs, cb) {
       bulk.find({
         clientId: client.id,
         topic: sub.topic
-      }).upsert().updateOne(
-        decorateSubscription(subscription, that._opts)
-      )
+      }).upsert().updateOne({
+        $set: decorateSubscription(subscription, that._opts)
+      })
     })
 
   bulk.execute(finish)
