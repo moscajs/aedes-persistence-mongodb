@@ -1,6 +1,6 @@
 {
   "name": "aedes-persistence-mongodb",
-  "version": "8.0.1",
+  "version": "8.1.0",
   "description": "MongoDB persistence for Aedes ",
   "main": "persistence.js",
   "scripts": {
