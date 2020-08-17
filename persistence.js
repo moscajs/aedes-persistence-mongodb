@@ -104,15 +104,15 @@ MongoPersistence.prototype._setup = function () {
         }
 
         if (that._opts.ttl.packets.will >= 0) {
-          will.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.will, name: 'ttl' })
+          will.createIndex({ 'packet.added': 1 }, { expireAfterSeconds: that._opts.ttl.packets.will, name: 'ttl' })
         }
 
         if (that._opts.ttl.packets.outgoing >= 0) {
-          outgoing.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.outgoing, name: 'ttl' })
+          outgoing.createIndex({ 'packet.added': 1 }, { expireAfterSeconds: that._opts.ttl.packets.outgoing, name: 'ttl' })
         }
 
         if (that._opts.ttl.packets.incoming >= 0) {
-          incoming.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.incoming, name: 'ttl' })
+          incoming.createIndex({ 'packet.added': 1 }, { expireAfterSeconds: that._opts.ttl.packets.incoming, name: 'ttl' })
         }
       }
 

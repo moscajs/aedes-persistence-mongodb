@@ -386,9 +386,14 @@ function runTest (client, db) {
             t.notOk(err, 'no error')
             t.deepEqual({ added: 1 }, indexes[1].key, 'must return the index key')
 
-            instance.destroy(function () {
-              t.pass('Instance dies')
-              emitter.close(t.end.bind(t))
+            db.collection('outgoing').indexInformation({ full: true }, function (err, indexes) {
+              t.notOk(err, 'no error')
+              t.deepEqual({ 'packet.added': 1 }, indexes[1].key, 'must return the index key')
+
+              instance.destroy(function () {
+                t.pass('Instance dies')
+                emitter.close(t.end.bind(t))
+              })
             })
           })
         })
