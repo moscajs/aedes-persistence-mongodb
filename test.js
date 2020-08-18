@@ -386,13 +386,23 @@ function runTest (client, db) {
             t.notOk(err, 'no error')
             t.deepEqual({ added: 1 }, indexes[1].key, 'must return the index key')
 
-            db.collection('outgoing').indexInformation({ full: true }, function (err, indexes) {
+            db.collection('incoming').indexInformation({ full: true }, function (err, indexes) {
               t.notOk(err, 'no error')
               t.deepEqual({ 'packet.added': 1 }, indexes[1].key, 'must return the index key')
 
-              instance.destroy(function () {
-                t.pass('Instance dies')
-                emitter.close(t.end.bind(t))
+              db.collection('outgoing').indexInformation({ full: true }, function (err, indexes) {
+                t.notOk(err, 'no error')
+                t.deepEqual({ 'packet.added': 1 }, indexes[1].key, 'must return the index key')
+
+                db.collection('will').indexInformation({ full: true }, function (err, indexes) {
+                  t.notOk(err, 'no error')
+                  t.deepEqual({ 'packet.added': 1 }, indexes[1].key, 'must return the index key')
+
+                  instance.destroy(function () {
+                    t.pass('Instance dies')
+                    emitter.close(t.end.bind(t))
+                  })
+                })
               })
             })
           })
@@ -520,7 +530,7 @@ function runTest (client, db) {
   })
 
   test('look up for expired packets', function (t) {
-    t.plan(8)
+    t.plan(17)
 
     clean(db, cleanopts, function (err) {
       t.error(err)
@@ -550,20 +560,47 @@ function runTest (client, db) {
             added: date
           }
 
-          function checkRetained () {
+          function checkExpired () {
             db.collection('retained').findOne({ topic: 'hello/world' }, function (err, result) {
               t.notOk(err, 'no error')
               t.equal(null, result, 'must return empty packet')
 
-              instance.destroy(t.pass.bind(t, 'instance dies'))
-              emitter.close(t.pass.bind(t, 'emitter dies'))
+              db.collection('incoming').findOne({ topic: 'hello/world' }, function (err, result) {
+                t.notOk(err, 'no error')
+                t.equal(null, result, 'must return empty packet')
+
+                db.collection('outgoing').findOne({ topic: 'hello/world' }, function (err, result) {
+                  t.notOk(err, 'no error')
+                  t.equal(null, result, 'must return empty packet')
+
+                  db.collection('will').findOne({ topic: 'hello/world' }, function (err, result) {
+                    t.notOk(err, 'no error')
+                    t.equal(null, result, 'must return empty packet')
+
+                    instance.destroy(t.pass.bind(t, 'instance dies'))
+                    emitter.close(t.pass.bind(t, 'emitter dies'))
+                  })
+                })
+              })
             })
           }
 
           instance.storeRetained(packet, function (err) {
             t.notOk(err, 'no error')
 
-            setTimeout(checkRetained.bind(this), 4000) // https://docs.mongodb.com/manual/core/index-ttl/#timing-of-the-delete-operation
+            instance.incomingStorePacket({ clientId: 'client1' }, packet, function (err) {
+              t.notOk(err, 'no error')
+
+              instance.outgoingEnqueue({ clientId: 'client1' }, packet, function (err) {
+                t.notOk(err, 'no error')
+
+                instance.putWill({ clientId: 'client1' }, packet, function (err) {
+                  t.notOk(err, 'no error')
+
+                  setTimeout(checkExpired.bind(this), 4000) // https://docs.mongodb.com/manual/core/index-ttl/#timing-of-the-delete-operation
+                })
+              })
+            })
           })
         })
       })
