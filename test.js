@@ -382,25 +382,27 @@ function runTest (client, db) {
         instance.on('ready', function () {
           t.pass('instance ready')
 
-          db.collection('retained').indexInformation({ full: true }, function (err, indexes) {
-            t.notOk(err, 'no error')
-            t.deepEqual({ added: 1 }, indexes[1].key, 'must return the index key')
-
-            db.collection('incoming').indexInformation({ full: true }, function (err, indexes) {
+          setImmediate(function () {
+            db.collection('retained').indexInformation({ full: true }, function (err, indexes) {
               t.notOk(err, 'no error')
-              t.deepEqual({ 'packet.added': 1 }, indexes[1].key, 'must return the index key')
+              t.deepEqual({ added: 1 }, indexes[1].key, 'must return the index key')
 
-              db.collection('outgoing').indexInformation({ full: true }, function (err, indexes) {
+              db.collection('incoming').indexInformation({ full: true }, function (err, indexes) {
                 t.notOk(err, 'no error')
                 t.deepEqual({ 'packet.added': 1 }, indexes[1].key, 'must return the index key')
 
-                db.collection('will').indexInformation({ full: true }, function (err, indexes) {
+                db.collection('outgoing').indexInformation({ full: true }, function (err, indexes) {
                   t.notOk(err, 'no error')
                   t.deepEqual({ 'packet.added': 1 }, indexes[1].key, 'must return the index key')
 
-                  instance.destroy(function () {
-                    t.pass('Instance dies')
-                    emitter.close(t.end.bind(t))
+                  db.collection('will').indexInformation({ full: true }, function (err, indexes) {
+                    t.notOk(err, 'no error')
+                    t.deepEqual({ 'packet.added': 1 }, indexes[1].key, 'must return the index key')
+
+                    instance.destroy(function () {
+                      t.pass('Instance dies')
+                      emitter.close(t.end.bind(t))
+                    })
                   })
                 })
               })
