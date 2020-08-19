@@ -8,6 +8,7 @@ const Packet = CachedPersistence.Packet
 const mongodb = require('mongodb')
 const pump = require('pump')
 const through = require('through2')
+const parallel = require('fastparallel')()
 const Qlobber = require('qlobber').Qlobber
 const qlobberOpts = {
   separator: '/',
@@ -94,37 +95,67 @@ MongoPersistence.prototype._setup = function () {
     }
 
     function initCollections () {
+      function finishInit () {
+        subscriptions.find({
+          qos: { $gte: 0 }
+        }).on('data', function (chunk) {
+          that._trie.add(chunk.topic, chunk)
+        }).on('end', function () {
+          that.emit('ready')
+        }).on('error', function (err) {
+          that.emit('error', err)
+        })
+      }
+
+      function createTtlIndex (opts, cb) {
+        this._cl[opts.collection].createIndex(opts.key, { expireAfterSeconds: opts.expireAfterSeconds, name: 'ttl' }, cb)
+      }
+
+      const indexes = []
+
       if (that._opts.ttl.subscriptions >= 0) {
-        subscriptions.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.subscriptions, name: 'ttl' })
+        indexes.push({
+          collection: 'subscriptions',
+          key: 'added',
+          expireAfterSeconds: that._opts.ttl.subscriptions
+        })
       }
 
       if (that._opts.ttl.packets) {
         if (that._opts.ttl.packets.retained >= 0) {
-          retained.createIndex({ added: 1 }, { expireAfterSeconds: that._opts.ttl.packets.retained, name: 'ttl' })
+          indexes.push({
+            collection: 'retained',
+            key: 'added',
+            expireAfterSeconds: that._opts.ttl.packets.retained
+          })
         }
 
         if (that._opts.ttl.packets.will >= 0) {
-          will.createIndex({ 'packet.added': 1 }, { expireAfterSeconds: that._opts.ttl.packets.will, name: 'ttl' })
+          indexes.push({
+            collection: 'will',
+            key: 'packet.added',
+            expireAfterSeconds: that._opts.ttl.packets.will
+          })
         }
 
         if (that._opts.ttl.packets.outgoing >= 0) {
-          outgoing.createIndex({ 'packet.added': 1 }, { expireAfterSeconds: that._opts.ttl.packets.outgoing, name: 'ttl' })
+          indexes.push({
+            collection: 'outgoing',
+            key: 'packet.added',
+            expireAfterSeconds: that._opts.ttl.packets.outgoing
+          })
         }
 
         if (that._opts.ttl.packets.incoming >= 0) {
-          incoming.createIndex({ 'packet.added': 1 }, { expireAfterSeconds: that._opts.ttl.packets.incoming, name: 'ttl' })
+          indexes.push({
+            collection: 'incoming',
+            key: 'packet.added',
+            expireAfterSeconds: that._opts.ttl.packets.incoming
+          })
         }
       }
 
-      subscriptions.find({
-        qos: { $gte: 0 }
-      }).on('data', function (chunk) {
-        that._trie.add(chunk.topic, chunk)
-      }).on('end', function () {
-        that.emit('ready')
-      }).on('error', function (err) {
-        that.emit('error', err)
-      })
+      parallel(that, createTtlIndex, indexes, finishInit)
     }
 
     // drop existing indexes (if exists)
