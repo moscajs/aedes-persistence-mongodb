@@ -65,7 +65,7 @@ MongoPersistence.prototype._setup = function () {
 
   this._connect(function (err, client) {
     if (err) {
-      this.emit('error', err)
+      that.emit('error', err)
       return
     }
 
