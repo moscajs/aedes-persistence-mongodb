@@ -384,25 +384,84 @@ function runTest (client, db) {
 
           db.collection('retained').indexInformation({ full: true }, function (err, indexes) {
             t.notOk(err, 'no error')
-            t.deepEqual({ added: 1 }, indexes[1].key, 'must return the index key')
+            const index = indexes.find(index => index.name === 'ttl')
+            t.deepEqual({ added: 1 }, index.key, 'must return the index key')
 
             db.collection('incoming').indexInformation({ full: true }, function (err, indexes) {
               t.notOk(err, 'no error')
-              t.deepEqual({ 'packet.added': 1 }, indexes[1].key, 'must return the index key')
+              const index = indexes.find(index => index.name === 'ttl')
+              t.deepEqual({ 'packet.added': 1 }, index.key, 'must return the index key')
 
               db.collection('outgoing').indexInformation({ full: true }, function (err, indexes) {
                 t.notOk(err, 'no error')
-                t.deepEqual({ 'packet.added': 1 }, indexes[1].key, 'must return the index key')
+                const index = indexes.find(index => index.name === 'ttl')
+                t.deepEqual({ 'packet.added': 1 }, index.key, 'must return the index key')
 
                 db.collection('will').indexInformation({ full: true }, function (err, indexes) {
                   t.notOk(err, 'no error')
-                  t.deepEqual({ 'packet.added': 1 }, indexes[1].key, 'must return the index key')
+                  const index = indexes.find(index => index.name === 'ttl')
+                  t.deepEqual({ 'packet.added': 1 }, index.key, 'must return the index key')
 
                   instance.destroy(function () {
                     t.pass('Instance dies')
                     emitter.close(t.end.bind(t))
                   })
                 })
+              })
+            })
+          })
+        })
+      })
+    })
+  })
+
+  test('look up for query indexes', function (t) {
+    clean(db, cleanopts, function (err) {
+      t.error(err)
+
+      dbopts.ttl = {
+        packets: 1,
+        subscriptions: 1
+      }
+      var emitter = mqemitterMongo(dbopts)
+
+      emitter.status.on('stream', function () {
+        t.pass('mqemitter ready')
+        var instance = persistence(dbopts)
+        instance.broker = toBroker('1', emitter)
+
+        instance.on('ready', function () {
+          t.pass('instance ready')
+
+          db.collection('incoming').indexInformation({ full: true }, function (err, indexes) {
+            t.notOk(err, 'no error')
+            const messageIdIndex = indexes.find(index => index.name === 'query_clientId_messageId')
+            const brokerIdIndex = indexes.find(index => index.name === 'query_clientId_brokerId')
+            t.deepEqual(
+              { clientId: 1, 'packet.messageId': 1 },
+              messageIdIndex.key, 'must return the index key'
+            )
+            t.deepEqual(
+              { clientId: 1, 'packet.brokerId': 1, 'packet.brokerCounter': 1 },
+              brokerIdIndex.key, 'must return the index key'
+            )
+
+            db.collection('outgoing').indexInformation({ full: true }, function (err, indexes) {
+              t.notOk(err, 'no error')
+              const messageIdIndex = indexes.find(index => index.name === 'query_clientId_messageId')
+              const brokerIdIndex = indexes.find(index => index.name === 'query_clientId_brokerId')
+              t.deepEqual(
+                { clientId: 1, 'packet.messageId': 1 },
+                messageIdIndex.key, 'must return the index key'
+              )
+              t.deepEqual(
+                { clientId: 1, 'packet.brokerId': 1, 'packet.brokerCounter': 1 },
+                brokerIdIndex.key, 'must return the index key'
+              )
+
+              instance.destroy(function () {
+                t.pass('Instance dies')
+                emitter.close(t.end.bind(t))
               })
             })
           })

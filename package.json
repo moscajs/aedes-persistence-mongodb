@@ -64,7 +64,7 @@
     "tape": "^4.13.2"
   },
   "dependencies": {
-    "aedes-cached-persistence": "^8.1.0",
+    "aedes-cached-persistence": "^8.1.1",
     "escape-string-regexp": "^4.0.0",
     "fastparallel": "^2.3.0",
     "mongodb": "^3.6.0",

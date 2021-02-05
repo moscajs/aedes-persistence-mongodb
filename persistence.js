@@ -107,16 +107,43 @@ MongoPersistence.prototype._setup = function () {
         })
       }
 
-      function createTtlIndex (opts, cb) {
-        this._cl[opts.collection].createIndex(opts.key, { expireAfterSeconds: opts.expireAfterSeconds, name: 'ttl' }, cb)
+      function createIndex (opts, cb) {
+        const indexOpts = { name: opts.name }
+        if (typeof opts.expireAfterSeconds === 'number') {
+          indexOpts.expireAfterSeconds = opts.expireAfterSeconds
+        }
+
+        return this._cl[opts.collection].createIndex(opts.key, indexOpts, cb)
       }
 
-      const indexes = []
+      const indexes = [
+        {
+          collection: 'outgoing',
+          key: { clientId: 1, 'packet.brokerId': 1, 'packet.brokerCounter': 1 },
+          name: 'query_clientId_brokerId'
+        },
+        {
+          collection: 'outgoing',
+          key: { clientId: 1, 'packet.messageId': 1 },
+          name: 'query_clientId_messageId'
+        },
+        {
+          collection: 'incoming',
+          key: { clientId: 1, 'packet.brokerId': 1, 'packet.brokerCounter': 1 },
+          name: 'query_clientId_brokerId'
+        },
+        {
+          collection: 'incoming',
+          key: { clientId: 1, 'packet.messageId': 1 },
+          name: 'query_clientId_messageId'
+        }
+      ]
 
       if (that._opts.ttl.subscriptions >= 0) {
         indexes.push({
           collection: 'subscriptions',
           key: 'added',
+          name: 'ttl',
           expireAfterSeconds: that._opts.ttl.subscriptions
         })
       }
@@ -126,6 +153,7 @@ MongoPersistence.prototype._setup = function () {
           indexes.push({
             collection: 'retained',
             key: 'added',
+            name: 'ttl',
             expireAfterSeconds: that._opts.ttl.packets.retained
           })
         }
@@ -134,6 +162,7 @@ MongoPersistence.prototype._setup = function () {
           indexes.push({
             collection: 'will',
             key: 'packet.added',
+            name: 'ttl',
             expireAfterSeconds: that._opts.ttl.packets.will
           })
         }
@@ -142,6 +171,7 @@ MongoPersistence.prototype._setup = function () {
           indexes.push({
             collection: 'outgoing',
             key: 'packet.added',
+            name: 'ttl',
             expireAfterSeconds: that._opts.ttl.packets.outgoing
           })
         }
@@ -150,12 +180,13 @@ MongoPersistence.prototype._setup = function () {
           indexes.push({
             collection: 'incoming',
             key: 'packet.added',
+            name: 'ttl',
             expireAfterSeconds: that._opts.ttl.packets.incoming
           })
         }
       }
 
-      parallel(that, createTtlIndex, indexes, finishInit)
+      parallel(that, createIndex, indexes, finishInit)
     }
 
     // drop existing indexes (if exists)
