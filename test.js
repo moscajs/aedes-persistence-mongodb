@@ -665,4 +665,25 @@ function runTest (client, db) {
       })
     })
   })
+
+  var dboptsWithUrlMongoOptions = {
+    url: mongourl,
+    mongoOptions: {
+      appname: 'TEST'
+    }
+  }
+
+  test('should pass mongoOptions to mongodb driver', function (t) {
+    var instance = persistence(dboptsWithUrlMongoOptions)
+    instance._connect(function (err, client) {
+      t.error(err)
+      for (var opt in dboptsWithUrlMongoOptions.mongoOptions) {
+        t.equal(dboptsWithUrlMongoOptions.mongoOptions[opt], client.s.options[opt], 'must pass options to mongodb')
+      }
+      client.close(function () {
+        t.pass('Client closed')
+        t.end()
+      })
+    })
+  })
 }

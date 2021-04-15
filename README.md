@@ -30,17 +30,25 @@ It accepts a connections string `url` or you can pass your existing `db` object.
 ### Options
 
 - `url`: The MongoDB connection url
+- `mongoOptions`: Extra options to pass to MongoDB driver (see [node-mongodb-native](http://mongodb.github.io/node-mongodb-native/3.6/api/MongoClient.html))
 - `ttl`: Used to set a ttl (time to live) to documents stored in collections
   - `packets`: Could be an integer value that specify the ttl in seconds of all packets collections or an Object that specifies for each collection its ttl in seconds. Packets collections are: `incoming`, `outgoing`, `retained`, `will`.
   - `susbscriptions`: Set a ttl (in seconds)
 - `db`: Existing MongoDB instance (if no `url` option is specified)
-- `dropExistingIndexes`: Flag used to drop any exsisting index previously created on collections (except default index `_id`)
+- `dropExistingIndexes`: Flag used to drop any existing index previously created on collections (except default index `_id`)
 
 ### Examples
 
 ```js
 aedesPersistenceMongoDB({
   url: 'mongodb://127.0.0.1/aedes-test', // Optional when you pass db object
+  // Optional mongo options
+  mongoOptions: { 
+    auth: {
+      user: 'username',
+      password: 'password'
+    }
+  },
   // Optional ttl settings
   ttl: {
       packets: 300, // Number of seconds
