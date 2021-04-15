@@ -53,7 +53,13 @@ MongoPersistence.prototype._connect = function (cb) {
 
   const conn = this._opts.url || 'mongodb://127.0.0.1/aedes'
 
-  mongodb.MongoClient.connect(conn, { useNewUrlParser: true, useUnifiedTopology: true }, cb)
+  const options = { useNewUrlParser: true, useUnifiedTopology: true }
+
+  if (this._opts.mongoOptions) {
+    Object.assign(options, this._opts.mongoOptions)
+  }
+
+  mongodb.MongoClient.connect(conn, options, cb)
 }
 
 MongoPersistence.prototype._setup = function () {
