@@ -18,7 +18,6 @@ jobs:
         uses: actions/setup-node@v1
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'npm'
       - name: Install mongo
         run: | 
           docker run -d -p 27017:27017 mongo:latest mongod --setParameter ttlMonitorSleepSecs=2
