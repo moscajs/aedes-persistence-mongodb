@@ -17,6 +17,10 @@ const qlobberOpts = {
   match_empty_levels: true
 }
 
+function toStream(op) {
+  return op.stream ? op.stream() : op
+}
+
 function MongoPersistence (opts) {
   if (!(this instanceof MongoPersistence)) {
     return new MongoPersistence(opts)
@@ -102,9 +106,9 @@ MongoPersistence.prototype._setup = function () {
 
     function initCollections () {
       function finishInit () {
-        subscriptions.find({
+        toStream(subscriptions.find({
           qos: { $gte: 0 }
-        }).on('data', function (chunk) {
+        })).on('data', function (chunk) {
           that._trie.add(chunk.topic, chunk)
         }).on('end', function () {
           that.emit('ready')
@@ -312,9 +316,9 @@ MongoPersistence.prototype.createRetainedStreamCombi = function (patterns) {
   regex = regex.join('|')
 
   return pump(
-    this._cl.retained.find({
+    toStream(this._cl.retained.find({
       topic: new RegExp(regex)
-    }),
+    })),
     instance
   )
 }
@@ -357,6 +361,7 @@ MongoPersistence.prototype.addSubscriptions = function (client, subs, cb) {
   function finish (err) {
     errored = err
     published++
+    console.log('published', published)
     if (published === 2) {
       cb(errored, client)
     }
@@ -428,11 +433,11 @@ MongoPersistence.prototype.subscriptionsByClient = function (client, cb) {
 MongoPersistence.prototype.countOffline = function (cb) {
   var clientsCount = 0
   var that = this
-  this._cl.subscriptions.aggregate([{
+  toStream(this._cl.subscriptions.aggregate([{
     $group: {
       _id: '$clientId'
     }
-  }]).on('data', function () {
+  }])).on('data', function () {
     clientsCount++
   }).on('end', function () {
     cb(null, that._trie.subscriptionsCount, clientsCount)
@@ -506,7 +511,7 @@ function asPacket (obj, enc, cb) {
 
 MongoPersistence.prototype.outgoingStream = function (client) {
   return pump(
-    this._cl.outgoing.find({ clientId: client.id }),
+    toStream(this._cl.outgoing.find({ clientId: client.id })),
     through.obj(asPacket))
 }
 
@@ -697,7 +702,7 @@ MongoPersistence.prototype.streamWill = function (brokers) {
   if (brokers) {
     query['packet.brokerId'] = { $nin: Object.keys(brokers) }
   }
-  return pump(this._cl.will.find(query), through.obj(asPacket))
+  return pump(toStream(this._cl.will.find(query)), through.obj(asPacket))
 }
 
 MongoPersistence.prototype.getClientList = function (topic) {
@@ -707,7 +712,7 @@ MongoPersistence.prototype.getClientList = function (topic) {
     query.topic = topic
   }
 
-  return pump(this._cl.subscriptions.find(query), through.obj(function asPacket (obj, enc, cb) {
+  return pump(toStream(this._cl.subscriptions.find(query)), through.obj(function asPacket (obj, enc, cb) {
     this.push(obj.clientId)
     cb()
   }))
