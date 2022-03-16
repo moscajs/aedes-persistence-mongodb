@@ -9,7 +9,6 @@ var dbname = 'aedes-test'
 var mongourl = 'mongodb://127.0.0.1/' + dbname
 let clean = null
 
-
 MongoClient.connect(mongourl, { useNewUrlParser: true, useUnifiedTopology: true, w: 1 }, function (err, client) {
   if (err) {
     throw err
@@ -22,10 +21,10 @@ MongoClient.connect(mongourl, { useNewUrlParser: true, useUnifiedTopology: true,
     db.collection('retained'),
     db.collection('will'),
     db.collection('outgoing'),
-    db.collection('incoming'),
+    db.collection('incoming')
   ]
 
-  clean = async (cb) => { 
+  clean = async (cb) => {
     await Promise.all(collections.map((c) => c.deleteMany({})))
     cb()
   }

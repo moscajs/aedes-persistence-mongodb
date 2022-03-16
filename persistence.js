@@ -17,7 +17,7 @@ const qlobberOpts = {
   match_empty_levels: true
 }
 
-function toStream(op) {
+function toStream (op) {
   return op.stream ? op.stream() : op
 }
 
