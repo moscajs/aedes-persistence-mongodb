@@ -66,7 +66,7 @@
     "aedes-cached-persistence": "^8.1.1",
     "escape-string-regexp": "^4.0.0",
     "fastparallel": "^2.3.0",
-    "mongodb": "^4.4.1",
+    "mongodb": "^4.5.0",
     "native-url": "^0.3.1",
     "pump": "^3.0.0",
     "qlobber": "^5.0.0",
