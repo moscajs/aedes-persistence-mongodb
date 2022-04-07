@@ -5,12 +5,9 @@ var persistence = require('./')
 var MongoClient = require('mongodb').MongoClient
 var abs = require('aedes-cached-persistence/abstract')
 var mqemitterMongo = require('mqemitter-mongodb')
-var clean = require('mongo-clean')
 var dbname = 'aedes-test'
 var mongourl = 'mongodb://127.0.0.1/' + dbname
-var cleanopts = {
-  action: 'deleteMany'
-}
+let clean = null
 
 MongoClient.connect(mongourl, { useNewUrlParser: true, useUnifiedTopology: true, w: 1 }, function (err, client) {
   if (err) {
@@ -19,13 +16,26 @@ MongoClient.connect(mongourl, { useNewUrlParser: true, useUnifiedTopology: true,
 
   var db = client.db(dbname)
 
+  const collections = [
+    db.collection('subscriptions'),
+    db.collection('retained'),
+    db.collection('will'),
+    db.collection('outgoing'),
+    db.collection('incoming')
+  ]
+
+  clean = async (cb) => {
+    await Promise.all(collections.map((c) => c.deleteMany({})))
+    cb()
+  }
+
   // set ttl task to run every 2 seconds
-  db.executeDbAdminCommand({ setParameter: 1, ttlMonitorSleepSecs: 2 }, function (err) {
+  db.admin().command({ setParameter: 1, ttlMonitorSleepSecs: 2 }, function (err) {
     if (err) {
       throw err
     }
 
-    clean(db, cleanopts, function (err, db) {
+    clean(function (err) {
       if (err) {
         throw err
       }
@@ -53,7 +63,7 @@ function runTest (client, db) {
       return emitter
     },
     persistence: function build (cb) {
-      clean(db, cleanopts, function (err) {
+      clean(function (err) {
         if (err) {
           return cb(err)
         }
@@ -88,7 +98,7 @@ function runTest (client, db) {
   test('multiple persistences', function (t) {
     t.plan(12)
 
-    clean(db, cleanopts, function (err) {
+    clean(function (err) {
       t.error(err)
 
       var emitter = mqemitterMongo(dbopts)
@@ -167,7 +177,7 @@ function runTest (client, db) {
   test('multiple persistences with passed db object and url', function (t) {
     t.plan(12)
 
-    clean(db, cleanopts, function (err) {
+    clean(function (err) {
       t.error(err)
 
       var emitter = mqemitterMongo(dboptsWithDbObjectAndUrl)
@@ -245,7 +255,7 @@ function runTest (client, db) {
   test('multiple persistences with passed only db object', function (t) {
     t.plan(12)
 
-    clean(db, cleanopts, function (err) {
+    clean(function (err) {
       t.error(err)
 
       var emitter = mqemitterMongo(dboptsWithOnlyDbObject)
@@ -319,7 +329,7 @@ function runTest (client, db) {
   test('qos 0 subs restoration', function (t) {
     t.plan(10)
 
-    clean(db, cleanopts, function (err) {
+    clean(function (err) {
       t.error(err)
 
       var emitter = mqemitterMongo(dbopts)
@@ -365,7 +375,7 @@ function runTest (client, db) {
   })
 
   test('look up for expire after seconds index', function (t) {
-    clean(db, cleanopts, function (err) {
+    clean(function (err) {
       t.error(err)
 
       dbopts.ttl = {
@@ -416,7 +426,7 @@ function runTest (client, db) {
   })
 
   test('look up for query indexes', function (t) {
-    clean(db, cleanopts, function (err) {
+    clean(function (err) {
       t.error(err)
 
       dbopts.ttl = {
@@ -471,7 +481,7 @@ function runTest (client, db) {
   })
 
   test('look up for packet with added property', function (t) {
-    clean(db, cleanopts, function (err) {
+    clean(function (err) {
       t.error(err)
 
       dbopts.ttl = {
@@ -541,7 +551,7 @@ function runTest (client, db) {
       })
     }
 
-    clean(db, cleanopts, function (err) {
+    clean(function (err) {
       t.notOk(err, 'no error')
 
       dbopts.ttl = {
@@ -591,7 +601,7 @@ function runTest (client, db) {
   test('look up for expired packets', function (t) {
     t.plan(17)
 
-    clean(db, cleanopts, function (err) {
+    clean(function (err) {
       t.error(err)
 
       dbopts.ttl = {
@@ -669,7 +679,7 @@ function runTest (client, db) {
   var dboptsWithUrlMongoOptions = {
     url: mongourl,
     mongoOptions: {
-      appname: 'TEST'
+      raw: true // must be a valid mongo option
     }
   }
 
