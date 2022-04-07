@@ -54,7 +54,7 @@
     "concat-stream": "^2.0.0",
     "faucet": "0.0.1",
     "license-checker": "^25.0.1",
-    "mqemitter-mongodb": "^8.0.0",
+    "mqemitter-mongodb": "^8.1.0",
     "nyc": "^15.0.1",
     "pre-commit": "^1.2.2",
     "release-it": "^14.0.3",
