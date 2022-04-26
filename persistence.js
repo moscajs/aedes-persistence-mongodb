@@ -361,7 +361,6 @@ MongoPersistence.prototype.addSubscriptions = function (client, subs, cb) {
   function finish (err) {
     errored = err
     published++
-    console.log('published', published)
     if (published === 2) {
       cb(errored, client)
     }
