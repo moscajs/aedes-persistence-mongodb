@@ -351,7 +351,7 @@ class MongoPersistence extends CachedPersistence {
       }
 
       const toReturn = subs.map(function (sub) {
-        // remove clientId from sub
+        // remove clientId and _id from sub
         const { clientId, _id, ...resub } = sub
         return resub
       })
