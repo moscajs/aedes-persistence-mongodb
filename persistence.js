@@ -16,12 +16,12 @@ const qlobberOpts = {
   match_empty_levels: true
 }
 
-function toStream(op) {
+function toStream (op) {
   return op.stream ? op.stream() : op
 }
 
 class MongoPersistence extends CachedPersistence {
-  constructor(opts = {}) {
+  constructor (opts = {}) {
     super(opts)
 
     opts.ttl = opts.ttl || {}
@@ -44,7 +44,7 @@ class MongoPersistence extends CachedPersistence {
     CachedPersistence.call(this, opts)
   }
 
-  _connect(cb) {
+  _connect (cb) {
     if (this._opts.db) {
       cb(null, this._opts.db)
       return
@@ -61,7 +61,7 @@ class MongoPersistence extends CachedPersistence {
     mongodb.MongoClient.connect(conn, options, cb)
   }
 
-  _setup() {
+  _setup () {
     if (this.ready) {
       return
     }
@@ -99,8 +99,8 @@ class MongoPersistence extends CachedPersistence {
         incoming
       }
 
-      function initCollections() {
-        function finishInit() {
+      function initCollections () {
+        function finishInit () {
           toStream(subscriptions.find({
             qos: { $gte: 0 }
           })).on('data', function (chunk) {
@@ -112,7 +112,7 @@ class MongoPersistence extends CachedPersistence {
           })
         }
 
-        function createIndex(opts, cb) {
+        function createIndex (opts, cb) {
           const indexOpts = { name: opts.name }
           if (typeof opts.expireAfterSeconds === 'number') {
             indexOpts.expireAfterSeconds = opts.expireAfterSeconds
@@ -203,13 +203,13 @@ class MongoPersistence extends CachedPersistence {
     })
   }
 
-  _dropIndexes(db, cb) {
+  _dropIndexes (db, cb) {
     db.collections(function (err, collections) {
       if (err) { throw err }
 
       let done = 0
 
-      function finish(err) {
+      function finish (err) {
         if (err) { throw err }
 
         done++
@@ -236,7 +236,7 @@ class MongoPersistence extends CachedPersistence {
     })
   }
 
-  storeRetained(packet, cb) {
+  storeRetained (packet, cb) {
     if (!this.ready) {
       this.once('ready', this.storeRetained.bind(this, packet, cb))
       return
@@ -246,11 +246,11 @@ class MongoPersistence extends CachedPersistence {
     executeBulk(this)
   }
 
-  createRetainedStream(pattern) {
+  createRetainedStream (pattern) {
     return this.createRetainedStreamCombi([pattern])
   }
 
-  createRetainedStreamCombi(patterns) {
+  createRetainedStreamCombi (patterns) {
     let regex = []
 
     const instance = through.obj(filterPattern)
@@ -271,7 +271,7 @@ class MongoPersistence extends CachedPersistence {
     )
   }
 
-  addSubscriptions(client, subs, cb) {
+  addSubscriptions (client, subs, cb) {
     if (!this.ready) {
       this.once('ready', this.addSubscriptions.bind(this, client, subs, cb))
       return
@@ -296,7 +296,7 @@ class MongoPersistence extends CachedPersistence {
     bulk.execute(finish)
     this._addedSubscriptions(client, subs, finish)
 
-    function finish(err) {
+    function finish (err) {
       errored = err
       published++
       if (published === 2) {
@@ -305,7 +305,7 @@ class MongoPersistence extends CachedPersistence {
     }
   }
 
-  removeSubscriptions(client, subs, cb) {
+  removeSubscriptions (client, subs, cb) {
     if (!this.ready) {
       this.once('ready', this.removeSubscriptions.bind(this, client, subs, cb))
       return
@@ -325,7 +325,7 @@ class MongoPersistence extends CachedPersistence {
     bulk.execute(finish)
     this._removedSubscriptions(client, subs.map(toSub), finish)
 
-    function finish(err) {
+    function finish (err) {
       if (err && !errored) {
         errored = true
         cb(err, client)
@@ -338,7 +338,7 @@ class MongoPersistence extends CachedPersistence {
     }
   }
 
-  subscriptionsByClient(client, cb) {
+  subscriptionsByClient (client, cb) {
     if (!this.ready) {
       this.once('ready', this.subscriptionsByClient.bind(this, client, cb))
       return
@@ -352,7 +352,7 @@ class MongoPersistence extends CachedPersistence {
 
       const toReturn = subs.map(function (sub) {
         // remove clientId from sub
-        const { clientId, ...resub } = sub
+        const { clientId, _id, ...resub } = sub
         return resub
       })
 
@@ -360,7 +360,7 @@ class MongoPersistence extends CachedPersistence {
     })
   }
 
-  countOffline(cb) {
+  countOffline (cb) {
     let clientsCount = 0
     const that = this
     toStream(this._cl.subscriptions.aggregate([{
@@ -374,7 +374,7 @@ class MongoPersistence extends CachedPersistence {
     }).on('error', cb)
   }
 
-  destroy(cb) {
+  destroy (cb) {
     if (!this.ready) {
       this.once('ready', this.destroy.bind(this, cb))
       return
@@ -398,11 +398,11 @@ class MongoPersistence extends CachedPersistence {
     }
   }
 
-  outgoingEnqueue(sub, packet, cb) {
+  outgoingEnqueue (sub, packet, cb) {
     this.outgoingEnqueueCombi([sub], packet, cb)
   }
 
-  outgoingEnqueueCombi(subs, packet, cb) {
+  outgoingEnqueueCombi (subs, packet, cb) {
     if (!this.ready) {
       this.once('ready', this.outgoingEnqueueCombi.bind(this, subs, packet, cb))
       return
@@ -415,7 +415,7 @@ class MongoPersistence extends CachedPersistence {
     const newp = new Packet(packet)
     const opts = this._opts
 
-    function createPacket(sub) {
+    function createPacket (sub) {
       return {
         clientId: sub.clientId,
         packet: decoratePacket(newp, opts)
@@ -427,13 +427,13 @@ class MongoPersistence extends CachedPersistence {
     })
   }
 
-  outgoingStream(client) {
+  outgoingStream (client) {
     return pump(
       toStream(this._cl.outgoing.find({ clientId: client.id })),
       through.obj(asPacket))
   }
 
-  outgoingUpdate(client, packet, cb) {
+  outgoingUpdate (client, packet, cb) {
     if (!this.ready) {
       this.once('ready', this.outgoingUpdate.bind(this, client, packet, cb))
       return
@@ -445,7 +445,7 @@ class MongoPersistence extends CachedPersistence {
     }
   }
 
-  outgoingClearMessageId(client, packet, cb) {
+  outgoingClearMessageId (client, packet, cb) {
     if (!this.ready) {
       this.once('ready', this.outgoingClearMessageId.bind(this, client, packet, cb))
       return
@@ -474,7 +474,7 @@ class MongoPersistence extends CachedPersistence {
     })
   }
 
-  incomingStorePacket(client, packet, cb) {
+  incomingStorePacket (client, packet, cb) {
     if (!this.ready) {
       this.once('ready', this.incomingStorePacket.bind(this, client, packet, cb))
       return
@@ -489,7 +489,7 @@ class MongoPersistence extends CachedPersistence {
     }, cb)
   }
 
-  incomingGetPacket(client, packet, cb) {
+  incomingGetPacket (client, packet, cb) {
     if (!this.ready) {
       this.once('ready', this.incomingGetPacket.bind(this, client, packet, cb))
       return
@@ -519,7 +519,7 @@ class MongoPersistence extends CachedPersistence {
     })
   }
 
-  incomingDelPacket(client, packet, cb) {
+  incomingDelPacket (client, packet, cb) {
     if (!this.ready) {
       this.once('ready', this.incomingDelPacket.bind(this, client, packet, cb))
       return
@@ -531,7 +531,7 @@ class MongoPersistence extends CachedPersistence {
     }, cb)
   }
 
-  putWill(client, packet, cb) {
+  putWill (client, packet, cb) {
     if (!this.ready) {
       this.once('ready', this.putWill.bind(this, client, packet, cb))
       return
@@ -547,7 +547,7 @@ class MongoPersistence extends CachedPersistence {
     })
   }
 
-  getWill(client, cb) {
+  getWill (client, cb) {
     this._cl.will.findOne({
       clientId: client.id
     }, function (err, result) {
@@ -571,7 +571,7 @@ class MongoPersistence extends CachedPersistence {
     })
   }
 
-  delWill(client, cb) {
+  delWill (client, cb) {
     const will = this._cl.will
     this.getWill(client, function (err, packet) {
       if (err || !packet) {
@@ -586,7 +586,7 @@ class MongoPersistence extends CachedPersistence {
     })
   }
 
-  streamWill(brokers) {
+  streamWill (brokers) {
     const query = {}
 
     if (brokers) {
@@ -595,28 +595,28 @@ class MongoPersistence extends CachedPersistence {
     return pump(toStream(this._cl.will.find(query)), through.obj(asPacket))
   }
 
-  getClientList(topic) {
+  getClientList (topic) {
     const query = {}
 
     if (topic) {
       query.topic = topic
     }
 
-    return pump(toStream(this._cl.subscriptions.find(query)), through.obj(function asPacket(obj, enc, cb) {
+    return pump(toStream(this._cl.subscriptions.find(query)), through.obj(function asPacket (obj, enc, cb) {
       this.push(obj.clientId)
       cb()
     }))
   }
 }
 
-function decoratePacket(packet, opts) {
+function decoratePacket (packet, opts) {
   if (opts.ttl.packets) {
     packet.added = new Date()
   }
   return packet
 }
 
-function executeBulk(that) {
+function executeBulk (that) {
   if (!that.executing && that.packetsQueue.length > 0) {
     that.executing = true
     const bulk = that._cl.retained.initializeOrderedBulkOp()
@@ -644,7 +644,7 @@ function executeBulk(that) {
   }
 }
 
-function filterPattern(chunk, enc, cb) {
+function filterPattern (chunk, enc, cb) {
   if (this.matcher.match(chunk.topic).length > 0) {
     chunk.payload = chunk.payload.buffer
     // this is converting chunk to slow properties
@@ -656,20 +656,20 @@ function filterPattern(chunk, enc, cb) {
   cb()
 }
 
-function decorateSubscription(sub, opts) {
+function decorateSubscription (sub, opts) {
   if (opts.ttl.subscriptions) {
     sub.added = new Date()
   }
   return sub
 }
 
-function toSub(topic) {
+function toSub (topic) {
   return {
     topic
   }
 }
 
-function asPacket(obj, enc, cb) {
+function asPacket (obj, enc, cb) {
   const packet = obj.packet
 
   if (packet.payload) {
@@ -681,7 +681,7 @@ function asPacket(obj, enc, cb) {
   cb(null, packet)
 }
 
-function updateWithMessageId(db, client, packet, cb) {
+function updateWithMessageId (db, client, packet, cb) {
   db.outgoing.updateOne({
     clientId: client.id,
     'packet.brokerCounter': packet.brokerCounter,
@@ -695,7 +695,7 @@ function updateWithMessageId(db, client, packet, cb) {
   })
 }
 
-function updatePacket(db, client, packet, cb) {
+function updatePacket (db, client, packet, cb) {
   db.outgoing.updateOne({
     clientId: client.id,
     'packet.messageId': packet.messageId
@@ -709,6 +709,6 @@ function updatePacket(db, client, packet, cb) {
   })
 }
 
-function noop() { }
+function noop () { }
 
 module.exports = (opts) => new MongoPersistence(opts)
