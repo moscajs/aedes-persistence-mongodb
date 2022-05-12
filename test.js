@@ -1,8 +1,8 @@
 'use strict'
 
-const test = require('tape').test
+const { test } = require('tape')
 const persistence = require('./')
-const MongoClient = require('mongodb').MongoClient
+const { MongoClient } = require('mongodb')
 const abs = require('aedes-cached-persistence/abstract')
 const mqemitterMongo = require('mqemitter-mongodb')
 const dbname = 'aedes-test'
@@ -45,7 +45,7 @@ MongoClient.connect(mongourl, { useNewUrlParser: true, useUnifiedTopology: true,
   })
 })
 
-function runTest (client, db) {
+function runTest(client, db) {
   test.onFinish(function () {
     // close mongodb client connection
     client.close()
@@ -62,7 +62,7 @@ function runTest (client, db) {
       const emitter = mqemitterMongo(dbopts)
       return emitter
     },
-    persistence: function build (cb) {
+    persistence: function build(cb) {
       clean(function (err) {
         if (err) {
           return cb(err)
@@ -86,7 +86,7 @@ function runTest (client, db) {
     }
   })
 
-  function toBroker (id, emitter) {
+  function toBroker(id, emitter) {
     return {
       id,
       publish: emitter.emit.bind(emitter),
@@ -529,7 +529,7 @@ function runTest (client, db) {
   })
 
   test('drop existing indexes', function (t) {
-    function checkIndexes (shouldExist, cb) {
+    function checkIndexes(shouldExist, cb) {
       db.collections(function (err, collections) {
         t.notOk(err, 'no error')
         if (collections.length === 0) {
@@ -629,7 +629,7 @@ function runTest (client, db) {
             added: date
           }
 
-          function checkExpired () {
+          function checkExpired() {
             db.collection('retained').findOne({ topic: 'hello/world' }, function (err, result) {
               t.notOk(err, 'no error')
               t.equal(null, result, 'must return empty packet')
