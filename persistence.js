@@ -8,7 +8,7 @@ const mongodb = require('mongodb')
 const pump = require('pump')
 const through = require('through2')
 const parallel = require('fastparallel')()
-const Qlobber = require('qlobber').Qlobber
+const { Qlobber } = require('qlobber')
 const qlobberOpts = {
   separator: '/',
   wildcard_one: '+',
