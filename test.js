@@ -1,12 +1,12 @@
 'use strict'
 
-var test = require('tape').test
-var persistence = require('./')
-var MongoClient = require('mongodb').MongoClient
-var abs = require('aedes-cached-persistence/abstract')
-var mqemitterMongo = require('mqemitter-mongodb')
-var dbname = 'aedes-test'
-var mongourl = 'mongodb://127.0.0.1/' + dbname
+const { test } = require('tape')
+const persistence = require('./')
+const { MongoClient } = require('mongodb')
+const abs = require('aedes-cached-persistence/abstract')
+const mqemitterMongo = require('mqemitter-mongodb')
+const dbname = 'aedes-test'
+const mongourl = 'mongodb://127.0.0.1/' + dbname
 let clean = null
 
 MongoClient.connect(mongourl, { useNewUrlParser: true, useUnifiedTopology: true, w: 1 }, function (err, client) {
@@ -14,7 +14,7 @@ MongoClient.connect(mongourl, { useNewUrlParser: true, useUnifiedTopology: true,
     throw err
   }
 
-  var db = client.db(dbname)
+  const db = client.db(dbname)
 
   const collections = [
     db.collection('subscriptions'),
@@ -51,15 +51,15 @@ function runTest (client, db) {
     client.close()
   })
 
-  var dbopts = {
+  const dbopts = {
     url: mongourl
   }
 
   abs({
-    test: test,
+    test,
     waitForReady: true,
     buildEmitter: function () {
-      var emitter = mqemitterMongo(dbopts)
+      const emitter = mqemitterMongo(dbopts)
       return emitter
     },
     persistence: function build (cb) {
@@ -68,9 +68,9 @@ function runTest (client, db) {
           return cb(err)
         }
 
-        var instance = persistence(dbopts)
+        const instance = persistence(dbopts)
 
-        var oldDestroy = instance.destroy
+        const oldDestroy = instance.destroy
 
         instance.destroy = function (cb) {
           instance.destroy = oldDestroy
@@ -88,7 +88,7 @@ function runTest (client, db) {
 
   function toBroker (id, emitter) {
     return {
-      id: id,
+      id,
       publish: emitter.emit.bind(emitter),
       subscribe: emitter.on.bind(emitter),
       unsubscribe: emitter.removeListener.bind(emitter)
@@ -101,30 +101,30 @@ function runTest (client, db) {
     clean(function (err) {
       t.error(err)
 
-      var emitter = mqemitterMongo(dbopts)
+      const emitter = mqemitterMongo(dbopts)
 
       emitter.status.once('stream', function () {
         t.pass('mqemitter 1 ready')
 
-        var emitter2 = mqemitterMongo(dbopts)
+        const emitter2 = mqemitterMongo(dbopts)
 
         emitter2.status.once('stream', function () {
           t.pass('mqemitter 2 ready')
 
-          var instance = persistence(dbopts)
+          const instance = persistence(dbopts)
           instance.broker = toBroker('1', emitter)
 
           instance.on('ready', function () {
             t.pass('instance ready')
 
-            var instance2 = persistence(dbopts)
+            const instance2 = persistence(dbopts)
             instance2.broker = toBroker('2', emitter2)
 
             instance2.on('ready', function () {
               t.pass('instance2 ready')
 
-              var client = { id: 'abcde' }
-              var subs = [{
+              const client = { id: 'abcde' }
+              const subs = [{
                 topic: 'hello',
                 qos: 1
               }, {
@@ -169,9 +169,9 @@ function runTest (client, db) {
     })
   })
 
-  var dboptsWithDbObjectAndUrl = {
+  const dboptsWithDbObjectAndUrl = {
     url: mongourl,
-    db: db
+    db
   }
 
   test('multiple persistences with passed db object and url', function (t) {
@@ -180,30 +180,30 @@ function runTest (client, db) {
     clean(function (err) {
       t.error(err)
 
-      var emitter = mqemitterMongo(dboptsWithDbObjectAndUrl)
+      const emitter = mqemitterMongo(dboptsWithDbObjectAndUrl)
 
       emitter.status.once('stream', function () {
         t.pass('mqemitter 1 ready')
 
-        var emitter2 = mqemitterMongo(dboptsWithDbObjectAndUrl)
+        const emitter2 = mqemitterMongo(dboptsWithDbObjectAndUrl)
 
         emitter2.status.once('stream', function () {
           t.pass('mqemitter 2 ready')
 
-          var instance = persistence(dboptsWithDbObjectAndUrl)
+          const instance = persistence(dboptsWithDbObjectAndUrl)
           instance.broker = toBroker('1', emitter)
 
           instance.on('ready', function () {
             t.pass('instance ready')
 
-            var instance2 = persistence(dboptsWithDbObjectAndUrl)
+            const instance2 = persistence(dboptsWithDbObjectAndUrl)
             instance2.broker = toBroker('2', emitter2)
 
             instance2.on('ready', function () {
               t.pass('instance2 ready')
 
-              var client = { id: 'abcde' }
-              var subs = [{
+              const client = { id: 'abcde' }
+              const subs = [{
                 topic: 'hello',
                 qos: 1
               }, {
@@ -248,8 +248,8 @@ function runTest (client, db) {
     })
   })
 
-  var dboptsWithOnlyDbObject = {
-    db: db
+  const dboptsWithOnlyDbObject = {
+    db
   }
 
   test('multiple persistences with passed only db object', function (t) {
@@ -258,30 +258,30 @@ function runTest (client, db) {
     clean(function (err) {
       t.error(err)
 
-      var emitter = mqemitterMongo(dboptsWithOnlyDbObject)
+      const emitter = mqemitterMongo(dboptsWithOnlyDbObject)
 
       emitter.status.once('stream', function () {
         t.pass('mqemitter 1 ready')
 
-        var emitter2 = mqemitterMongo(dboptsWithOnlyDbObject)
+        const emitter2 = mqemitterMongo(dboptsWithOnlyDbObject)
 
         emitter2.status.once('stream', function () {
           t.pass('mqemitter 2 ready')
 
-          var instance = persistence(dboptsWithOnlyDbObject)
+          const instance = persistence(dboptsWithOnlyDbObject)
           instance.broker = toBroker('1', emitter)
 
           instance.on('ready', function () {
             t.pass('instance ready')
 
-            var instance2 = persistence(dboptsWithOnlyDbObject)
+            const instance2 = persistence(dboptsWithOnlyDbObject)
             instance2.broker = toBroker('2', emitter2)
 
             instance2.on('ready', function () {
               t.pass('instance2 ready')
 
-              var client = { id: 'abcde' }
-              var subs = [{
+              const client = { id: 'abcde' }
+              const subs = [{
                 topic: 'hello',
                 qos: 1
               }, {
@@ -332,17 +332,17 @@ function runTest (client, db) {
     clean(function (err) {
       t.error(err)
 
-      var emitter = mqemitterMongo(dbopts)
+      const emitter = mqemitterMongo(dbopts)
 
       emitter.status.on('stream', function () {
         t.pass('mqemitter 1 ready')
-        var instance = persistence(dbopts)
+        const instance = persistence(dbopts)
         instance.broker = toBroker('1', emitter)
 
         instance.on('ready', function () {
           t.pass('instance ready')
-          var client = { id: 'abcde' }
-          var subs = [{
+          const client = { id: 'abcde' }
+          const subs = [{
             topic: 'hello',
             qos: 0
           }]
@@ -353,7 +353,7 @@ function runTest (client, db) {
             instance.destroy(t.pass.bind(t, 'first dies'))
             emitter.close(t.pass.bind(t, 'first emitter dies'))
 
-            var instance2 = persistence(dbopts)
+            const instance2 = persistence(dbopts)
             instance2.broker = toBroker('1', emitter)
 
             instance2.on('ready', function () {
@@ -382,11 +382,11 @@ function runTest (client, db) {
         packets: 1,
         subscriptions: 1
       }
-      var emitter = mqemitterMongo(dbopts)
+      const emitter = mqemitterMongo(dbopts)
 
       emitter.status.on('stream', function () {
         t.pass('mqemitter ready')
-        var instance = persistence(dbopts)
+        const instance = persistence(dbopts)
         instance.broker = toBroker('1', emitter)
 
         instance.on('ready', function () {
@@ -433,11 +433,11 @@ function runTest (client, db) {
         packets: 1,
         subscriptions: 1
       }
-      var emitter = mqemitterMongo(dbopts)
+      const emitter = mqemitterMongo(dbopts)
 
       emitter.status.on('stream', function () {
         t.pass('mqemitter ready')
-        var instance = persistence(dbopts)
+        const instance = persistence(dbopts)
         instance.broker = toBroker('1', emitter)
 
         instance.on('ready', function () {
@@ -488,18 +488,18 @@ function runTest (client, db) {
         packets: 1,
         subscriptions: 1
       }
-      var emitter = mqemitterMongo(dbopts)
+      const emitter = mqemitterMongo(dbopts)
 
       emitter.status.on('stream', function () {
         t.pass('mqemitter ready')
-        var instance = persistence(dbopts)
+        const instance = persistence(dbopts)
         instance.broker = toBroker('2', emitter)
 
         instance.on('ready', function () {
           t.pass('instance ready')
 
-          var date = new Date()
-          var packet = {
+          const date = new Date()
+          const packet = {
             cmd: 'publish',
             id: instance.broker.id,
             topic: 'hello/world',
@@ -535,7 +535,7 @@ function runTest (client, db) {
         if (collections.length === 0) {
           cb()
         } else {
-          var done = 0
+          let done = 0
           for (let i = 0; i < collections.length; i++) {
             collections[i].indexExists('ttl', function (err, exists) {
               t.notOk(err, 'no error')
@@ -558,12 +558,12 @@ function runTest (client, db) {
         packets: 1,
         subscriptions: 1
       }
-      var emitter = mqemitterMongo(dbopts)
+      const emitter = mqemitterMongo(dbopts)
 
       emitter.status.on('stream', function () {
         t.pass('mqemitter ready')
 
-        var instance = persistence(dbopts)
+        const instance = persistence(dbopts)
         instance.broker = toBroker('1', emitter)
 
         instance.on('ready', function () {
@@ -576,12 +576,12 @@ function runTest (client, db) {
             instance.destroy(t.pass.bind(t, 'first instance dies'))
             emitter.close(t.pass.bind(t, 'first emitter dies'))
 
-            var emitter2 = mqemitterMongo(dbopts)
+            const emitter2 = mqemitterMongo(dbopts)
 
             emitter2.status.on('stream', function () {
               t.pass('mqemitter ready')
 
-              var instance2 = persistence(dbopts)
+              const instance2 = persistence(dbopts)
               instance2.broker = toBroker('2', emitter2)
 
               instance2.on('ready', function () {
@@ -608,18 +608,18 @@ function runTest (client, db) {
         packets: 1,
         subscriptions: 1
       }
-      var emitter = mqemitterMongo(dbopts)
+      const emitter = mqemitterMongo(dbopts)
 
       emitter.status.on('stream', function () {
         t.pass('mqemitter ready')
-        var instance = persistence(dbopts)
+        const instance = persistence(dbopts)
         instance.broker = toBroker('1', emitter)
 
         instance.on('ready', function () {
           t.pass('instance ready')
 
-          var date = new Date()
-          var packet = {
+          const date = new Date()
+          const packet = {
             cmd: 'publish',
             id: instance.broker.id,
             topic: 'hello/world',
@@ -676,7 +676,7 @@ function runTest (client, db) {
     })
   })
 
-  var dboptsWithUrlMongoOptions = {
+  const dboptsWithUrlMongoOptions = {
     url: mongourl,
     mongoOptions: {
       raw: true // must be a valid mongo option
@@ -684,10 +684,10 @@ function runTest (client, db) {
   }
 
   test('should pass mongoOptions to mongodb driver', function (t) {
-    var instance = persistence(dboptsWithUrlMongoOptions)
+    const instance = persistence(dboptsWithUrlMongoOptions)
     instance._connect(function (err, client) {
       t.error(err)
-      for (var opt in dboptsWithUrlMongoOptions.mongoOptions) {
+      for (const opt in dboptsWithUrlMongoOptions.mongoOptions) {
         t.equal(dboptsWithUrlMongoOptions.mongoOptions[opt], client.s.options[opt], 'must pass options to mongodb')
       }
       client.close(function () {
