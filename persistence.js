@@ -40,8 +40,6 @@ class MongoPersistence extends CachedPersistence {
     this._cl = null
     this.packetsQueue = [] // used for storing retained packets with ordered bulks
     this.executing = false // used as lock while a bulk is executing
-
-    CachedPersistence.call(this, opts)
   }
 
   _connect (cb) {
@@ -66,23 +64,21 @@ class MongoPersistence extends CachedPersistence {
       return
     }
 
-    const that = this
-
-    this._connect(function (err, client) {
+    this._connect((err, client) => {
       if (err) {
-        that.emit('error', err)
+        this.emit('error', err)
         return
       }
 
-      that._client = client
+      this._client = client
 
       let db
-      if (that._opts.db) {
-        db = that._opts.db
+      if (this._opts.db) {
+        db = this._opts.db
       } else {
-        const urlParsed = urlModule.parse(that._opts.url)
-        const databaseName = that._opts.database || (urlParsed.pathname ? urlParsed.pathname.substr(1) : undefined)
-        db = that._db = client.db(databaseName)
+        const urlParsed = urlModule.parse(this._opts.url)
+        const databaseName = this._opts.database || (urlParsed.pathname ? urlParsed.pathname.substr(1) : undefined)
+        db = this._db = client.db(databaseName)
       }
 
       const subscriptions = db.collection('subscriptions')
@@ -91,7 +87,7 @@ class MongoPersistence extends CachedPersistence {
       const outgoing = db.collection('outgoing')
       const incoming = db.collection('incoming')
 
-      that._cl = {
+      this._cl = {
         subscriptions,
         retained,
         will,
@@ -99,16 +95,16 @@ class MongoPersistence extends CachedPersistence {
         incoming
       }
 
-      function initCollections () {
-        function finishInit () {
+      const initCollections = () => {
+        const finishInit = () => {
           toStream(subscriptions.find({
             qos: { $gte: 0 }
-          })).on('data', function (chunk) {
-            that._trie.add(chunk.topic, chunk)
-          }).on('end', function () {
-            that.emit('ready')
-          }).on('error', function (err) {
-            that.emit('error', err)
+          })).on('data', (chunk) => {
+            this._trie.add(chunk.topic, chunk)
+          }).on('end', () => {
+            this.emit('ready')
+          }).on('error', (err) => {
+            this.emit('error', err)
           })
         }
 
@@ -144,59 +140,59 @@ class MongoPersistence extends CachedPersistence {
           }
         ]
 
-        if (that._opts.ttl.subscriptions >= 0) {
+        if (this._opts.ttl.subscriptions >= 0) {
           indexes.push({
             collection: 'subscriptions',
             key: 'added',
             name: 'ttl',
-            expireAfterSeconds: that._opts.ttl.subscriptions
+            expireAfterSeconds: this._opts.ttl.subscriptions
           })
         }
 
-        if (that._opts.ttl.packets) {
-          if (that._opts.ttl.packets.retained >= 0) {
+        if (this._opts.ttl.packets) {
+          if (this._opts.ttl.packets.retained >= 0) {
             indexes.push({
               collection: 'retained',
               key: 'added',
               name: 'ttl',
-              expireAfterSeconds: that._opts.ttl.packets.retained
+              expireAfterSeconds: this._opts.ttl.packets.retained
             })
           }
 
-          if (that._opts.ttl.packets.will >= 0) {
+          if (this._opts.ttl.packets.will >= 0) {
             indexes.push({
               collection: 'will',
               key: 'packet.added',
               name: 'ttl',
-              expireAfterSeconds: that._opts.ttl.packets.will
+              expireAfterSeconds: this._opts.ttl.packets.will
             })
           }
 
-          if (that._opts.ttl.packets.outgoing >= 0) {
+          if (this._opts.ttl.packets.outgoing >= 0) {
             indexes.push({
               collection: 'outgoing',
               key: 'packet.added',
               name: 'ttl',
-              expireAfterSeconds: that._opts.ttl.packets.outgoing
+              expireAfterSeconds: this._opts.ttl.packets.outgoing
             })
           }
 
-          if (that._opts.ttl.packets.incoming >= 0) {
+          if (this._opts.ttl.packets.incoming >= 0) {
             indexes.push({
               collection: 'incoming',
               key: 'packet.added',
               name: 'ttl',
-              expireAfterSeconds: that._opts.ttl.packets.incoming
+              expireAfterSeconds: this._opts.ttl.packets.incoming
             })
           }
         }
 
-        parallel(that, createIndex, indexes, finishInit)
+        parallel(this, createIndex, indexes, finishInit)
       }
 
       // drop existing indexes (if exists)
-      if (that._opts.dropExistingIndexes) {
-        that._dropIndexes(db, initCollections)
+      if (this._opts.dropExistingIndexes) {
+        this._dropIndexes(db, initCollections)
       } else {
         initCollections()
       }
@@ -204,7 +200,7 @@ class MongoPersistence extends CachedPersistence {
   }
 
   _dropIndexes (db, cb) {
-    db.collections(function (err, collections) {
+    db.collections((err, collections) => {
       if (err) { throw err }
 
       let done = 0
@@ -222,7 +218,7 @@ class MongoPersistence extends CachedPersistence {
         finish()
       } else {
         for (let i = 0; i < collections.length; i++) {
-          collections[i].indexExists('ttl', function (err, exists) {
+          collections[i].indexExists('ttl', (err, exists) => {
             if (err) { throw err }
 
             if (exists) {
@@ -243,7 +239,7 @@ class MongoPersistence extends CachedPersistence {
     }
 
     this.packetsQueue.push({ packet, cb })
-    executeBulk(this)
+    this._executeBulk()
   }
 
   createRetainedStream (pattern) {
@@ -277,19 +273,18 @@ class MongoPersistence extends CachedPersistence {
       return
     }
 
-    const that = this
     let published = 0
     let errored = false
     const bulk = this._cl.subscriptions.initializeOrderedBulkOp()
     subs
-      .forEach(function (sub) {
+      .forEach((sub) => {
         const subscription = Object.assign({}, sub)
         subscription.clientId = client.id
         bulk.find({
           clientId: client.id,
           topic: sub.topic
         }).upsert().updateOne({
-          $set: decorateSubscription(subscription, that._opts)
+          $set: decorateSubscription(subscription, this._opts)
         })
       })
 
@@ -315,7 +310,7 @@ class MongoPersistence extends CachedPersistence {
     let errored = false
     const bulk = this._cl.subscriptions.initializeOrderedBulkOp()
     subs
-      .forEach(function (topic) {
+      .forEach((topic) => {
         bulk.find({
           clientId: client.id,
           topic
@@ -344,13 +339,13 @@ class MongoPersistence extends CachedPersistence {
       return
     }
 
-    this._cl.subscriptions.find({ clientId: client.id }).toArray(function (err, subs) {
+    this._cl.subscriptions.find({ clientId: client.id }).toArray((err, subs) => {
       if (err) {
         cb(err)
         return
       }
 
-      const toReturn = subs.map(function (sub) {
+      const toReturn = subs.map((sub) => {
         // remove clientId and _id from sub
         const { clientId, _id, ...resub } = sub
         return resub
@@ -362,15 +357,14 @@ class MongoPersistence extends CachedPersistence {
 
   countOffline (cb) {
     let clientsCount = 0
-    const that = this
     toStream(this._cl.subscriptions.aggregate([{
       $group: {
         _id: '$clientId'
       }
-    }])).on('data', function () {
+    }])).on('data', () => {
       clientsCount++
-    }).on('end', function () {
-      cb(null, that._trie.subscriptionsCount, clientsCount)
+    }).on('end', () => {
+      cb(null, this._trie.subscriptionsCount, clientsCount)
     }).on('error', cb)
   }
 
@@ -391,7 +385,7 @@ class MongoPersistence extends CachedPersistence {
     if (this._opts.db) {
       cb()
     } else {
-      this._client.close(function () {
+      this._client.close(() => {
         // swallow err in case of close
         cb()
       })
@@ -422,7 +416,7 @@ class MongoPersistence extends CachedPersistence {
       }
     }
 
-    this._cl.outgoing.insertMany(subs.map(createPacket), function (err) {
+    this._cl.outgoing.insertMany(subs.map(createPacket), (err) => {
       cb(err, packet)
     })
   }
@@ -456,7 +450,7 @@ class MongoPersistence extends CachedPersistence {
     outgoing.findOne({
       clientId: client.id,
       'packet.messageId': packet.messageId
-    }, function (err, p) {
+    }, (err, p) => {
       if (err) {
         return cb(err)
       }
@@ -468,7 +462,10 @@ class MongoPersistence extends CachedPersistence {
       outgoing.deleteOne({
         clientId: client.id,
         'packet.messageId': packet.messageId
-      }, function (err) {
+      }, (err) => {
+        if (p.packet.payload instanceof mongodb.Binary) {
+          p.packet.payload = p.packet.payload.buffer
+        }
         cb(err, p.packet)
       })
     })
@@ -498,7 +495,7 @@ class MongoPersistence extends CachedPersistence {
     this._cl.incoming.findOne({
       clientId: client.id,
       'packet.messageId': packet.messageId
-    }, function (err, result) {
+    }, (err, result) => {
       if (err) {
         cb(err)
         return
@@ -542,7 +539,7 @@ class MongoPersistence extends CachedPersistence {
     this._cl.will.insertOne({
       clientId: client.id,
       packet: decoratePacket(packet, this._opts)
-    }, function (err) {
+    }, (err) => {
       cb(err, client)
     })
   }
@@ -550,7 +547,7 @@ class MongoPersistence extends CachedPersistence {
   getWill (client, cb) {
     this._cl.will.findOne({
       clientId: client.id
-    }, function (err, result) {
+    }, (err, result) => {
       if (err) {
         cb(err)
         return
@@ -573,14 +570,14 @@ class MongoPersistence extends CachedPersistence {
 
   delWill (client, cb) {
     const will = this._cl.will
-    this.getWill(client, function (err, packet) {
+    this.getWill(client, (err, packet) => {
       if (err || !packet) {
         cb(err, null, client)
         return
       }
       will.deleteOne({
         clientId: client.id
-      }, function (err) {
+      }, (err) => {
         cb(err, packet, client)
       })
     })
@@ -607,6 +604,34 @@ class MongoPersistence extends CachedPersistence {
       cb()
     }))
   }
+
+  _executeBulk () {
+    if (!this.executing && this.packetsQueue.length > 0) {
+      this.executing = true
+      const bulk = this._cl.retained.initializeOrderedBulkOp()
+      const onEnd = []
+
+      while (this.packetsQueue.length) {
+        const p = this.packetsQueue.shift()
+        onEnd.push(p.cb)
+        const criteria = { topic: p.packet.topic }
+
+        if (p.packet.payload.length > 0) {
+          bulk.find(criteria).upsert().updateOne({
+            $set: decoratePacket(p.packet, this._opts)
+          })
+        } else {
+          bulk.find(criteria).deleteOne()
+        }
+      }
+
+      bulk.execute(() => {
+        while (onEnd.length) onEnd.shift().call()
+        this.executing = false
+        this._executeBulk()
+      })
+    }
+  }
 }
 
 function decoratePacket (packet, opts) {
@@ -614,34 +639,6 @@ function decoratePacket (packet, opts) {
     packet.added = new Date()
   }
   return packet
-}
-
-function executeBulk (that) {
-  if (!that.executing && that.packetsQueue.length > 0) {
-    that.executing = true
-    const bulk = that._cl.retained.initializeOrderedBulkOp()
-    const onEnd = []
-
-    while (that.packetsQueue.length) {
-      const p = that.packetsQueue.shift()
-      onEnd.push(p.cb)
-      const criteria = { topic: p.packet.topic }
-
-      if (p.packet.payload.length > 0) {
-        bulk.find(criteria).upsert().updateOne({
-          $set: decoratePacket(p.packet, that._opts)
-        })
-      } else {
-        bulk.find(criteria).deleteOne()
-      }
-    }
-
-    bulk.execute(function () {
-      while (onEnd.length) onEnd.shift().call()
-      that.executing = false
-      executeBulk(that)
-    })
-  }
 }
 
 function filterPattern (chunk, enc, cb) {
@@ -690,7 +687,7 @@ function updateWithMessageId (db, client, packet, cb) {
     $set: {
       'packet.messageId': packet.messageId
     }
-  }, function (err) {
+  }, (err) => {
     cb(err, client, packet)
   })
 }
@@ -704,7 +701,7 @@ function updatePacket (db, client, packet, cb) {
       clientId: client.id,
       packet
     }
-  }, function (err) {
+  }, (err) => {
     cb(err, client, packet)
   })
 }
