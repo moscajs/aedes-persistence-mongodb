@@ -143,11 +143,17 @@ function runTest (client, db) {
                     t.deepEqual(resubs, [{
                       clientId: client.id,
                       topic: 'hello/#',
-                      qos: 1
+                      qos: 1,
+                      rh: undefined,
+                      rap: undefined,
+                      nl: undefined
                     }, {
                       clientId: client.id,
                       topic: 'hello',
-                      qos: 1
+                      qos: 1,
+                      rh: undefined,
+                      rap: undefined,
+                      nl: undefined
                     }])
                     instance.destroy(function () {
                       t.pass('first dies')
@@ -222,11 +228,17 @@ function runTest (client, db) {
                     t.deepEqual(resubs, [{
                       clientId: client.id,
                       topic: 'hello/#',
-                      qos: 1
+                      qos: 1,
+                      rh: undefined,
+                      rap: undefined,
+                      nl: undefined
                     }, {
                       clientId: client.id,
                       topic: 'hello',
-                      qos: 1
+                      qos: 1,
+                      rh: undefined,
+                      rap: undefined,
+                      nl: undefined
                     }])
                     instance.destroy(function () {
                       t.pass('first dies')
@@ -300,11 +312,17 @@ function runTest (client, db) {
                     t.deepEqual(resubs, [{
                       clientId: client.id,
                       topic: 'hello/#',
-                      qos: 1
+                      qos: 1,
+                      rh: undefined,
+                      rap: undefined,
+                      nl: undefined
                     }, {
                       clientId: client.id,
                       topic: 'hello',
-                      qos: 1
+                      qos: 1,
+                      rh: undefined,
+                      rap: undefined,
+                      nl: undefined
                     }])
                     instance.destroy(function () {
                       t.pass('first dies')
@@ -363,7 +381,10 @@ function runTest (client, db) {
                 t.deepEqual(resubs, [{
                   clientId: 'abcde',
                   topic: 'hello',
-                  qos: 0
+                  qos: 0,
+                  rh: undefined,
+                  rap: undefined,
+                  nl: undefined
                 }])
                 instance2.destroy(t.pass.bind(t, 'second dies'))
               })
