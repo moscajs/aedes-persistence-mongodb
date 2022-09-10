@@ -36,6 +36,7 @@ It accepts a connections string `url` or you can pass your existing `db` object.
   - `susbscriptions`: Set a ttl (in seconds)
 - `db`: Existing MongoDB instance (if no `url` option is specified)
 - `dropExistingIndexes`: Flag used to drop any existing index previously created on collections (except default index `_id`)
+- `ttlAfterDisconnected`: Flag used to enable alternative behavior of the subscription ttl, the subscription will expire based on time since client last disconnected from the broker instead of time since the subscription was created.
 
 ### Examples
 

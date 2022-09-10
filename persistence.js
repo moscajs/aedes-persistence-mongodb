@@ -143,7 +143,7 @@ class MongoPersistence extends CachedPersistence {
         if (this._opts.ttl.subscriptions >= 0) {
           indexes.push({
             collection: 'subscriptions',
-            key: 'added',
+            key: this._opts.ttlAfterDisconnected ? 'disconnected' : 'added',
             name: 'ttl',
             expireAfterSeconds: this._opts.ttl.subscriptions
           })
@@ -195,6 +195,20 @@ class MongoPersistence extends CachedPersistence {
         this._dropIndexes(db, initCollections)
       } else {
         initCollections()
+      }
+
+      if (this._opts.ttlAfterDisconnected) {
+        // To avoid stale subscriptions that might be left behind by broker shutting
+        // down while clients were connected, set all to disconnected on startup.
+        this._cl.subscriptions.updateMany({ disconnected: { $exists: false } }, { $currentDate: { disconnected: true } })
+
+        // Handlers for setting and clearing the disconnected timestamp on subscriptions
+        this.broker.on('clientReady', (client) => {
+          this._cl.subscriptions.updateMany({ clientId: client.id }, { $unset: { disconnected: true } })
+        })
+        this.broker.on('clientDisconnect', (client) => {
+          this._cl.subscriptions.updateMany({ clientId: client.id }, { $currentDate: { disconnected: true } })
+        })
       }
     })
   }

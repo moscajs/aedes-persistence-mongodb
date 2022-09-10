@@ -91,7 +91,8 @@ function runTest (client, db) {
       id,
       publish: emitter.emit.bind(emitter),
       subscribe: emitter.on.bind(emitter),
-      unsubscribe: emitter.removeListener.bind(emitter)
+      unsubscribe: emitter.removeListener.bind(emitter),
+      on: () => {}
     }
   }
 
@@ -403,6 +404,7 @@ function runTest (client, db) {
         packets: 1,
         subscriptions: 1
       }
+      dbopts.ttlAfterDisconnected = true
       const emitter = mqemitterMongo(dbopts)
 
       emitter.status.on('stream', function () {
@@ -433,9 +435,15 @@ function runTest (client, db) {
                   const index = indexes.find(index => index.name === 'ttl')
                   t.deepEqual({ 'packet.added': 1 }, index.key, 'must return the index key')
 
-                  instance.destroy(function () {
-                    t.pass('Instance dies')
-                    emitter.close(t.end.bind(t))
+                  db.collection('subscriptions').indexInformation({ full: true }, function (err, indexes) {
+                    t.notOk(err, 'no error')
+                    const index = indexes.find(index => index.name === 'ttl')
+                    t.deepEqual({ disconnected: 1 }, index.key, 'must return the index key')
+
+                    instance.destroy(function () {
+                      t.pass('Instance dies')
+                      emitter.close(t.end.bind(t))
+                    })
                   })
                 })
               })
