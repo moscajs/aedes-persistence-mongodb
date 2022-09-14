@@ -1,6 +1,7 @@
 'use strict'
 
 const { test } = require('tape')
+const { EventEmitter } = require('events')
 const persistence = require('./')
 const { MongoClient } = require('mongodb')
 const abs = require('aedes-cached-persistence/abstract')
@@ -87,11 +88,14 @@ function runTest (client, db) {
   })
 
   function toBroker (id, emitter) {
+    const eventEmitter = new EventEmitter()
     return {
       id,
       publish: emitter.emit.bind(emitter),
       subscribe: emitter.on.bind(emitter),
-      unsubscribe: emitter.removeListener.bind(emitter)
+      unsubscribe: emitter.removeListener.bind(emitter),
+      on: eventEmitter.on.bind(eventEmitter),
+      emit: eventEmitter.emit.bind(eventEmitter)
     }
   }
 
@@ -403,6 +407,7 @@ function runTest (client, db) {
         packets: 1,
         subscriptions: 1
       }
+      dbopts.ttlAfterDisconnected = true
       const emitter = mqemitterMongo(dbopts)
 
       emitter.status.on('stream', function () {
@@ -433,9 +438,15 @@ function runTest (client, db) {
                   const index = indexes.find(index => index.name === 'ttl')
                   t.deepEqual({ 'packet.added': 1 }, index.key, 'must return the index key')
 
-                  instance.destroy(function () {
-                    t.pass('Instance dies')
-                    emitter.close(t.end.bind(t))
+                  db.collection('subscriptions').indexInformation({ full: true }, function (err, indexes) {
+                    t.notOk(err, 'no error')
+                    const index = indexes.find(index => index.name === 'ttl')
+                    t.deepEqual({ disconnected: 1 }, index.key, 'must return the index key')
+
+                    instance.destroy(function () {
+                      t.pass('Instance dies')
+                      emitter.close(t.end.bind(t))
+                    })
                   })
                 })
               })
@@ -714,6 +725,46 @@ function runTest (client, db) {
       client.close(function () {
         t.pass('Client closed')
         t.end()
+      })
+    })
+  })
+
+  test('subscription should expire after client disconnected', function (t) {
+    dbopts.ttl = {
+      subscriptions: 1
+    }
+    dbopts.ttlAfterDisconnected = true
+    const instance = persistence(dbopts)
+    const emitter = mqemitterMongo(dbopts)
+    const client = { id: 'client1' }
+    instance.broker = toBroker('1', emitter)
+    instance.on('ready', () => {
+      instance.addSubscriptions(client, [{
+        topic: 'hello',
+        qos: 1
+      }], function (err) {
+        t.error(err)
+        db.collection('subscriptions').findOne({ clientId: client.id, topic: 'hello' }, function (err, result) {
+          t.error(err)
+          t.notEqual(result, null, 'must return subscription')
+          t.equal(result.disconnected, undefined, 'disconnected should not be set')
+          instance.broker.emit('clientDisconnect', client)
+          setTimeout(() => {
+            db.collection('subscriptions').findOne({ clientId: client.id, topic: 'hello' }, function (err, result) {
+              t.error(err)
+              t.notEqual(result, null, 'must return subscription')
+              t.notEqual(result.disconnected, undefined, 'disconnected should be set')
+              setTimeout(() => {
+                db.collection('subscriptions').findOne({ clientId: client.id, topic: 'hello' }, function (err, result) {
+                  t.error(err)
+                  t.equal(result, null, 'must not return subscription')
+                  instance.destroy(t.pass.bind(t, 'instance dies'))
+                  emitter.close(t.end.bind(t))
+                })
+              }, 3000)
+            })
+          }, 500)
+        })
       })
     })
   })
