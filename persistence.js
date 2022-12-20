@@ -620,7 +620,7 @@ class MongoPersistence extends CachedPersistence {
   }
 
   _executeBulk () {
-    if (!this.executing && this.packetsQueue.length > 0) {
+    if (!this.executing && !this._destroyed && this.packetsQueue.length > 0) {
       this.executing = true
       const bulk = this._cl.retained.initializeOrderedBulkOp()
       const onEnd = []
