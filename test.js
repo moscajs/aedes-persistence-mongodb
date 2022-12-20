@@ -768,4 +768,39 @@ function runTest (client, db) {
       })
     })
   })
+
+  test('prevent executing bulk when instance is destroied', function (t) {
+    clean(function (err) {
+      t.error(err)
+
+      const emitter = mqemitterMongo(dbopts)
+
+      emitter.status.on('stream', function () {
+        t.pass('mqemitter ready')
+        const instance = persistence(dbopts)
+        instance.broker = toBroker('2', emitter)
+
+        instance.on('ready', function () {
+          t.pass('instance ready')
+
+          const packet = {
+            cmd: 'publish',
+            id: instance.broker.id,
+            topic: 'hello/world',
+            payload: Buffer.from('muahah'),
+            qos: 0,
+            retain: true
+          }
+
+          instance.packetsQueue.push({ packet, cb: () => { } })
+
+          instance.destroy(function () {
+            t.pass('Instance dies')
+            instance._executeBulk() // should not throw
+            emitter.close(t.end.bind(t))
+          })
+        })
+      })
+    })
+  })
 }
