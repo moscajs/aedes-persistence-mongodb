@@ -52,24 +52,24 @@
   "homepage": "https://github.com/moscajs/aedes-persistence-mongodb#readme",
   "devDependencies": {
     "concat-stream": "^2.0.0",
-    "faucet": "0.0.1",
+    "faucet": "0.0.3",
     "license-checker": "^25.0.1",
     "mqemitter-mongodb": "^8.1.0",
     "nyc": "^15.1.0",
     "pre-commit": "^1.2.2",
-    "release-it": "^15.0.0",
+    "release-it": "^15.5.1",
     "snazzy": "^9.0.0",
     "standard": "^17.0.0",
-    "tape": "^4.15.1"
+    "tape": "^5.6.1"
   },
   "dependencies": {
     "aedes-cached-persistence": "^9.0.0",
     "escape-string-regexp": "^4.0.0",
     "fastparallel": "^2.4.1",
-    "mongodb": "^4.6.0",
+    "mongodb": "^4.13.0",
     "native-url": "^0.3.4",
     "pump": "^3.0.0",
-    "qlobber": "^7.0.0",
+    "qlobber": "^7.0.1",
     "through2": "^4.0.2"
   }
 }
