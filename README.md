@@ -1,8 +1,6 @@
 # aedes-persistence-mongodb
 
 ![.github/workflows/ci.yml](https://github.com/moscajs/aedes-persistence-mongodb/workflows/.github/workflows/ci.yml/badge.svg)
-[![Dependencies Status](https://david-dm.org/moscajs/aedes-persistence-mongodb/status.svg)](https://david-dm.org/moscajs/aedes-persistence-mongodb)
-[![devDependencies Status](https://david-dm.org/moscajs/aedes-persistence-mongodb/dev-status.svg)](https://david-dm.org/moscajs/aedes-persistence-mongodb?type=dev)
 \
 [![Known Vulnerabilities](https://snyk.io/test/github/moscajs/aedes-persistence-mongodb/badge.svg)](https://snyk.io/test/github/moscajs/aedes-persistence-mongodb)
 [![Coverage Status](https://coveralls.io/repos/github/moscajs/aedes-persistence-mongodb/badge.svg?branch=master)](https://coveralls.io/github/moscajs/aedes-persistence-mongodb?branch=master)
