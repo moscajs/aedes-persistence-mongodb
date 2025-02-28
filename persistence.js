@@ -1,6 +1,3 @@
-'use strict'
-
-const urlModule = require('native-url')
 const escape = require('escape-string-regexp')
 const CachedPersistence = require('aedes-cached-persistence')
 const Packet = CachedPersistence.Packet
@@ -76,7 +73,7 @@ class MongoPersistence extends CachedPersistence {
       if (this._opts.db) {
         db = this._opts.db
       } else {
-        const urlParsed = urlModule.parse(this._opts.url)
+        const urlParsed = URL.parse(this._opts.url)
         const databaseName = this._opts.database || (urlParsed.pathname ? urlParsed.pathname.substr(1) : undefined)
         db = this._db = client.db(databaseName)
       }
