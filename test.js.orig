@@ -1,0 +1,755 @@
+const test = require('node:test')
+const { promisify } = require('util')
+const { EventEmitter } = require('events')
+const persistence = require('./')
+const { MongoClient } = require('mongodb')
+const abs = require('aedes-cached-persistence/abstract')
+const mqemitterMongo = require('mqemitter-mongodb')
+const { pid } = require('process')
+const dbname = 'aedes-test'
+const mongourl = 'mongodb://127.0.0.1/' + dbname
+let cleanDB = null
+let countDB = null
+
+// Sleep function to pause execution for a specified number of milliseconds
+function sleep(msec) {
+  return new Promise(resolve => setTimeout(resolve, msec))
+}
+
+function waitForEventOn(emitter, eventName, errorEvent) {
+  return new Promise((resolve, reject) => {
+    emitter.on(eventName, resolve)
+    if (errorEvent) {
+      emitter.on(errorEvent, reject)
+    }
+  })
+}
+
+function waitForEventOnce(emitter, eventName, errorEvent) {
+  return new Promise((resolve, reject) => {
+    emitter.on(eventName, resolve)
+    if (errorEvent) {
+      emitter.once(errorEvent, reject)
+    }
+  })
+}
+
+function waitForDone(fn) {
+  return new Promise((resolve, reject) => {
+    fn(() => {
+      resolve()
+    })
+  })
+}
+
+function 
+MongoClient.connect(mongourl, { useNewUrlParser: true, useUnifiedTopology: true, w: 1 }, async (err, client) => {
+  if (err) {
+    throw err
+  }
+
+  const db = client.db(dbname)
+  // Define collections that will be used in tests
+  const collections = [
+    db.collection('subscriptions'),
+    db.collection('retained'),
+    db.collection('will'),
+    db.collection('outgoing'),
+    db.collection('incoming')
+  ]
+
+  // Function to clean all collections before tests
+  cleanDB = async (cb) => {
+    const result = await Promise.all(collections.map((c) => c.deleteMany({})))
+    if (cb) {
+      cb()
+    }
+    return result
+  }
+
+  countDB = async () => {
+    return await Promise.all(collections.map((c) => c.countDocuments({})))
+  }
+
+  // Set TTL monitor to run every 2 seconds for faster testing
+  await db.admin().command({ setParameter: 1, ttlMonitorSleepSecs: 2 })
+  await cleanDB()
+  runTest(client, db)
+})
+
+// Factory function to create MQEmitter instances
+function makeBuildEmitter(dbopts) {
+  return function buildEmitter() {
+    const emitter = mqemitterMongo(dbopts)
+    return emitter
+  }
+}
+
+// Factory function to create persistence instances
+function makePersistence(dbopts) {
+  return function build(cb) {
+    cleanDB((err) => {
+      if (err) {
+        return cb(err)
+      }
+      const instance = persistence(dbopts)
+      // Save original destroy method
+      const oldDestroy = instance.destroy
+      // Enhance destroy method to also close the message queue
+      instance.destroy = (cb) => {
+        instance.destroy = oldDestroy
+        instance.destroy(() => {
+          instance.broker.mq.close(() => {
+            cb()
+          })
+        })
+      }
+      cb(null, instance)
+    })
+  }
+}
+
+// Create a broker-like object with necessary methods for testing
+function toBroker(id, emitter) {
+  const eventEmitter = new EventEmitter()
+  return {
+    id,
+    publish: emitter.emit.bind(emitter),
+    subscribe: emitter.on.bind(emitter),
+    unsubscribe: emitter.removeListener.bind(emitter),
+    on: eventEmitter.on.bind(eventEmitter),
+    emit: eventEmitter.emit.bind(eventEmitter)
+  }
+}
+
+// ready an instance for testing
+async function buildInstance(t, dbopts, id) {
+  const emitter = mqemitterMongo(dbopts)
+  await waitForEventOnce(emitter.status, 'stream')
+  t.diagnostic(`mqemitter ${id} ready`)
+  const instance = persistence(dbopts)
+  instance.broker = toBroker(id, emitter)
+  await waitForEventOn(instance, 'ready')
+  t.diagnostic(`instance ${id} ready`)
+  return { instance, emitter }
+}
+
+// cleanup after testing
+function cleanupInstance(t, obj, id = '') {
+  obj.instance.destroy(() => t.diagnostic(`instance ${id} destroyed`))
+  obj.emitter.close(() => t.diagnostic(`emitter ${id} closed`))
+}
+
+// Main test runner function
+function runTest(client, db) {
+  const dbopts = {
+    url: mongourl
+  }
+  // Run all tests from aedes-abstract-persistence
+  abs({
+    test,
+    buildEmitter: makeBuildEmitter(dbopts),
+    persistence: makePersistence(dbopts),
+    waitForReady: true,
+  })
+
+  // Test multiple persistence instances sharing the same database
+  test('multiple persistences', async (t) => {
+    await cleanDB()
+    console.log(await countDB())
+    const p1 = await buildInstance(t, dbopts, '1')
+    const p2 = await buildInstance(t, dbopts, '2')
+    const client = { id: 'abcde' }
+    const subs = [{
+      topic: 'hello',
+      qos: 1
+    }, {
+      topic: 'hello/#',
+      qos: 1
+    }, {
+      topic: 'matteo',
+      qos: 1
+    }]
+    // Add subscriptions to first instance and verify they're visible in second instance
+    const addSubscriptions = promisify(p1.instance.addSubscriptions.bind(p1.instance))
+    await addSubscriptions(client, subs)
+    t.diagnostic('added subscriptions to instance1')
+    await sleep(200)
+    p2.instance.subscriptionsByTopic('hello', (err, resubs) => {
+      t.assert.ok(!err, 'no error')
+      t.assert.deepEqual(resubs, [{
+        clientId: client.id,
+        topic: 'hello/#',
+        qos: 1,
+        rh: undefined,
+        rap: undefined,
+        nl: undefined
+      }, {
+        clientId: client.id,
+        topic: 'hello',
+        qos: 1,
+        rh: undefined,
+        rap: undefined,
+        nl: undefined
+      }], 'Subscriptions match')
+      t.diagnostic('cleaning up')
+      cleanupInstance(t, p1, '1')
+      cleanupInstance(t, p2, '2')
+    })
+  })
+
+
+  // Test with both URL and DB object provided
+  const dboptsWithDbObjectAndUrl = {
+    url: mongourl,
+    db
+  }
+
+  test('multiple persistences with passed db object and url', async (t) => {
+    await cleanDB()
+
+    const p1 = await buildInstance(t, dboptsWithDbObjectAndUrl, '1')
+    const p2 = await buildInstance(t, dboptsWithDbObjectAndUrl, '2')
+    const client = { id: 'abcde' }
+    const subs = [{
+      topic: 'hello',
+      qos: 1
+    }, {
+      topic: 'hello/#',
+      qos: 1
+    }, {
+      topic: 'matteo',
+      qos: 1
+    }]
+    // Add subscriptions to first instance and verify they're visible in second instance
+    p1.instance.addSubscriptions(client, subs, async (err) => {
+      t.diagnostic('added subscriptions to instance1')
+      t.assert.ok(!err, 'no error')
+      await sleep(200)
+      p2.instance.subscriptionsByTopic('hello', (err, resubs) => {
+        t.assert.ok(!err, 'no error')
+        t.assert.deepEqual(resubs, [{
+          clientId: client.id,
+          topic: 'hello/#',
+          qos: 1,
+          rh: undefined,
+          rap: undefined,
+          nl: undefined
+        }, {
+          clientId: client.id,
+          topic: 'hello',
+          qos: 1,
+          rh: undefined,
+          rap: undefined,
+          nl: undefined
+        }], 'Subscriptions match')
+        t.diagnostic('cleaning up')
+        cleanupInstance(t, p1, '1')
+        cleanupInstance(t, p2, '2')
+      })
+    })
+  })
+
+  // Test with only DB object provided (no URL)
+  const dboptsWithOnlyDbObject = {
+    db
+  }
+
+  test('multiple persistences with passed only db object', async (t) => {
+    await cleanDB()
+    const p1 = await buildInstance(t, dboptsWithDbObjectAndUrl, '1')
+    const p2 = await buildInstance(t, dboptsWithDbObjectAndUrl, '2')
+    const client = { id: 'abcde' }
+    const subs = [{
+      topic: 'hello',
+      qos: 1
+    }, {
+      topic: 'hello/#',
+      qos: 1
+    }, {
+      topic: 'matteo',
+      qos: 1
+    }]
+    // Add subscriptions to first instance and verify they're visible in second instance
+    p1.instance.addSubscriptions(client, subs, async (err) => {
+      t.diagnostic('added subscriptions to instance1')
+      t.assert.ok(!err, 'no error')
+      await sleep(200)
+      p2.instance.subscriptionsByTopic('hello', (err, resubs) => {
+        t.assert.ok(!err, 'no error')
+        t.assert.deepEqual(resubs, [{
+          clientId: client.id,
+          topic: 'hello/#',
+          qos: 1,
+          rh: undefined,
+          rap: undefined,
+          nl: undefined
+        }, {
+          clientId: client.id,
+          topic: 'hello',
+          qos: 1,
+          rh: undefined,
+          rap: undefined,
+          nl: undefined
+        }], 'Subscriptions match')
+        t.diagnostic('cleaning up')
+        cleanupInstance(t, p1, '1')
+        cleanupInstance(t, p2, '2')
+      })
+    })
+  })
+
+  // Test QoS 0 subscription restoration after restart
+  test('qos 0 subs restoration', async (t) => {
+    await cleanDB()
+    const p1 = await buildInstance(t, dbopts, '1')
+    const client = { id: 'abcde' }
+    const subs = [{
+      topic: 'hello',
+      qos: 0
+    }]
+
+    // Add QoS 0 subscription, destroy instance, and verify it's restored in new instance
+    p1.instance.addSubscriptions(client, subs, async (err, client) => {
+      t.assert.ok(!err, 'no error')
+      cleanupInstance(t, p1, '1')
+      const p2 = await buildInstance(t, dbopts, '2')
+      p2.instance2.subscriptionsByTopic('hello', (err, resubs) => {
+        t.assert.ok(!err, 'should not err')
+        t.assert.deepEqual(resubs, [{
+          clientId: 'abcde',
+          topic: 'hello',
+          qos: 0,
+          rh: undefined,
+          rap: undefined,
+          nl: undefined
+        }])
+        cleanupInstance(t, p2, '2')
+      })
+    })
+  })
+
+  // Test TTL indexes creation
+  test('look up for expire after seconds index', (t) => {
+    cleanDB((err) => {
+      t.assert.ifError(err)
+
+      dbopts.ttl = {
+        packets: 1,
+        subscriptions: 1
+      }
+      dbopts.ttlAfterDisconnected = true
+      const emitter = mqemitterMongo(dbopts)
+
+      emitter.status.on('stream', () => {
+        t.diagnostic('mqemitter ready')
+        const instance = persistence(dbopts)
+        instance.broker = toBroker('1', emitter)
+
+        instance.on('ready', () => {
+          t.diagnostic('instance ready')
+
+          // Verify TTL indexes are created on all collections
+          db.collection('retained').indexInformation({ full: true }, (err, indexes) => {
+            t.assert.ok(!err, 'no error')
+            const index = indexes.find(index => index.name === 'ttl')
+            t.assert.deepEqual({ added: 1 }, index.key, 'must return the index key')
+
+            db.collection('incoming').indexInformation({ full: true }, (err, indexes) => {
+              t.assert.ok(!err, 'no error')
+              const index = indexes.find(index => index.name === 'ttl')
+              t.assert.deepEqual({ 'packet.added': 1 }, index.key, 'must return the index key')
+
+              db.collection('outgoing').indexInformation({ full: true }, (err, indexes) => {
+                t.assert.ok(!err, 'no error')
+                const index = indexes.find(index => index.name === 'ttl')
+                t.assert.deepEqual({ 'packet.added': 1 }, index.key, 'must return the index key')
+
+                db.collection('will').indexInformation({ full: true }, (err, indexes) => {
+                  t.assert.ok(!err, 'no error')
+                  const index = indexes.find(index => index.name === 'ttl')
+                  t.assert.deepEqual({ 'packet.added': 1 }, index.key, 'must return the index key')
+
+                  db.collection('subscriptions').indexInformation({ full: true }, (err, indexes) => {
+                    t.assert.ok(!err, 'no error')
+                    const index = indexes.find(index => index.name === 'ttl')
+                    t.assert.deepEqual({ disconnected: 1 }, index.key, 'must return the index key')
+
+                    instance.destroy(() => {
+                      t.diagnostic('Instance dies')
+                      emitter.close()
+                    })
+                  })
+                })
+              })
+            })
+          })
+        })
+      })
+    })
+  })
+
+  // Test query indexes creation
+  test('look up for query indexes', (t) => {
+    cleanDB((err) => {
+      t.assert.ifError(err)
+
+      dbopts.ttl = {
+        packets: 1,
+        subscriptions: 1
+      }
+      const emitter = mqemitterMongo(dbopts)
+
+      emitter.status.on('stream', () => {
+        t.diagnostic('mqemitter ready')
+        const instance = persistence(dbopts)
+        instance.broker = toBroker('1', emitter)
+
+        instance.on('ready', () => {
+          t.diagnostic('instance ready')
+
+          // Verify query indexes are created on incoming and outgoing collections
+          db.collection('incoming').indexInformation({ full: true }, (err, indexes) => {
+            t.assert.ok(!err, 'no error')
+            const messageIdIndex = indexes.find(index => index.name === 'query_clientId_messageId')
+            const brokerIdIndex = indexes.find(index => index.name === 'query_clientId_brokerId')
+            t.assert.deepEqual(
+              { clientId: 1, 'packet.messageId': 1 },
+              messageIdIndex.key, 'must return the index key'
+            )
+            t.assert.deepEqual(
+              { clientId: 1, 'packet.brokerId': 1, 'packet.brokerCounter': 1 },
+              brokerIdIndex.key, 'must return the index key'
+            )
+
+            db.collection('outgoing').indexInformation({ full: true }, (err, indexes) => {
+              t.assert.ok(!err, 'no error')
+              const messageIdIndex = indexes.find(index => index.name === 'query_clientId_messageId')
+              const brokerIdIndex = indexes.find(index => index.name === 'query_clientId_brokerId')
+              t.assert.deepEqual(
+                { clientId: 1, 'packet.messageId': 1 },
+                messageIdIndex.key, 'must return the index key'
+              )
+              t.assert.deepEqual(
+                { clientId: 1, 'packet.brokerId': 1, 'packet.brokerCounter': 1 },
+                brokerIdIndex.key, 'must return the index key'
+              )
+
+              instance.destroy(() => {
+                t.diagnostic('Instance dies')
+                emitter.close()
+              })
+            })
+          })
+        })
+      })
+    })
+  })
+
+  // Test storing packets with added property
+  test('look up for packet with added property', (t) => {
+    cleanDB((err) => {
+      t.assert.ifError(err)
+
+      dbopts.ttl = {
+        packets: 1,
+        subscriptions: 1
+      }
+      const emitter = mqemitterMongo(dbopts)
+
+      emitter.status.on('stream', () => {
+        t.diagnostic('mqemitter ready')
+        const instance = persistence(dbopts)
+        instance.broker = toBroker('2', emitter)
+
+        instance.on('ready', () => {
+          t.diagnostic('instance ready')
+
+          const date = new Date()
+          const packet = {
+            cmd: 'publish',
+            id: instance.broker.id,
+            topic: 'hello/world',
+            payload: Buffer.from('muahah'),
+            qos: 0,
+            retain: true,
+            added: date
+          }
+
+          // Store packet with added property and verify it's saved correctly
+          instance.storeRetained(packet, (err) => {
+            t.assert.ok(!err, 'no error')
+
+            db.collection('retained').findOne({ topic: 'hello/world' }, (err, result) => {
+              t.assert.ok(!err, 'no error')
+              delete result._id
+              result.payload = result.payload.buffer
+              t.assert.deepEqual(packet, result, 'must return the packet')
+              instance.destroy(() => {
+                t.diagnostic('Instance dies')
+                emitter.close()
+              })
+            })
+          })
+        })
+      })
+    })
+  })
+
+  // Test dropping existing indexes
+  test('drop existing indexes', (t) => {
+    function checkIndexes(shouldExist, cb) {
+      db.collections((err, collections) => {
+        t.assert.ok(!err, 'no error')
+        if (collections.length === 0) {
+          cb()
+        } else {
+          let done = 0
+          for (let i = 0; i < collections.length; i++) {
+            collections[i].indexExists('ttl', (err, exists) => {
+              t.assert.ok(!err, 'no error')
+              if (collections[i].namespace.indexOf('pubsub') < 0) { // pubsub is the collection created by mqemitter-mongodb
+                t.assert.equal(shouldExist, exists, 'Index on ' + collections[i].namespace + ' should' + (shouldExist ? '' : ' not') + ' exist')
+              }
+              if (++done >= collections.length) {
+                cb()
+              }
+            })
+          }
+        }
+      })
+    }
+
+    cleanDB((err) => {
+      t.assert.ok(!err, 'no error')
+
+      dbopts.ttl = {
+        packets: 1,
+        subscriptions: 1
+      }
+      const emitter = mqemitterMongo(dbopts)
+
+      emitter.status.on('stream', () => {
+        t.diagnostic('mqemitter ready')
+
+        const instance = persistence(dbopts)
+        instance.broker = toBroker('1', emitter)
+
+        instance.on('ready', () => {
+          t.diagnostic('instance ready')
+
+          // First verify indexes exist, then drop them and verify they're gone
+          checkIndexes(true, () => {
+            delete dbopts.ttl
+            dbopts.dropExistingIndexes = true
+
+            instance.destroy(t.diagnostic('first instance dies'))
+            emitter.close(t.diagnostic('first emitter dies'))
+
+            const emitter2 = mqemitterMongo(dbopts)
+
+            emitter2.status.on('stream', () => {
+              t.diagnostic('mqemitter ready')
+
+              const instance2 = persistence(dbopts)
+              instance2.broker = toBroker('2', emitter2)
+
+              instance2.on('ready', () => {
+                t.diagnostic('instance ready')
+                checkIndexes(false, () => {
+                  instance2.destroy(t.diagnostic('second instance dies'))
+                  emitter2.close()
+                })
+              })
+            })
+          })
+        })
+      })
+    })
+  })
+
+  // Test TTL expiration of packets
+  test('look up for expired packets', (t) => {
+    cleanDB((err) => {
+      t.assert.ifError(err)
+
+      dbopts.ttl = {
+        packets: 1,
+        subscriptions: 1
+      }
+      const emitter = mqemitterMongo(dbopts)
+
+      emitter.status.on('stream', () => {
+        t.diagnostic('mqemitter ready')
+        const instance = persistence(dbopts)
+        instance.broker = toBroker('1', emitter)
+
+        instance.on('ready', () => {
+          t.diagnostic('instance ready')
+
+          const date = new Date()
+          const packet = {
+            cmd: 'publish',
+            id: instance.broker.id,
+            topic: 'hello/world',
+            payload: Buffer.from('muahah'),
+            qos: 0,
+            retain: true,
+            added: date
+          }
+
+          // Function to check if packets have expired
+          function checkExpired() {
+            db.collection('retained').findOne({ topic: 'hello/world' }, (err, result) => {
+              t.assert.ok(!err, 'no error')
+              t.assert.equal(null, result, 'must return empty packet')
+
+              db.collection('incoming').findOne({ topic: 'hello/world' }, (err, result) => {
+                t.assert.ok(!err, 'no error')
+                t.assert.equal(null, result, 'must return empty packet')
+
+                db.collection('outgoing').findOne({ topic: 'hello/world' }, (err, result) => {
+                  t.assert.ok(!err, 'no error')
+                  t.assert.equal(null, result, 'must return empty packet')
+
+                  db.collection('will').findOne({ topic: 'hello/world' }, (err, result) => {
+                    t.assert.ok(!err, 'no error')
+                    t.assert.equal(null, result, 'must return empty packet')
+
+                    instance.destroy(t.diagnostic('instance dies'))
+                    emitter.close(t.diagnostic('emitter dies'))
+                  })
+                })
+              })
+            })
+          }
+
+          // Store packets in all collections and wait for TTL to expire them
+          instance.storeRetained(packet, (err) => {
+            t.assert.ok(!err, 'no error')
+
+            instance.incomingStorePacket({ clientId: 'client1' }, packet, (err) => {
+              t.assert.ok(!err, 'no error')
+
+              instance.outgoingEnqueue({ clientId: 'client1' }, packet, (err) => {
+                t.assert.ok(!err, 'no error')
+
+                instance.putWill({ clientId: 'client1' }, packet, function (err) {
+                  t.assert.ok(!err, 'no error')
+
+                  setTimeout(checkExpired.bind(this), 4000) // https://docs.mongodb.com/manual/core/index-ttl/#timing-of-the-delete-operation
+                })
+              })
+            })
+          })
+        })
+      })
+    })
+  })
+
+  // Test passing MongoDB options
+  const dboptsWithUrlMongoOptions = {
+    url: mongourl,
+    mongoOptions: {
+      raw: true // must be a valid mongo option
+    }
+  }
+
+  test('should pass mongoOptions to mongodb driver', (t) => {
+    const instance = persistence(dboptsWithUrlMongoOptions)
+    instance._connect((err, client) => {
+      t.assert.ifError(err)
+      for (const opt in dboptsWithUrlMongoOptions.mongoOptions) {
+        t.assert.equal(dboptsWithUrlMongoOptions.mongoOptions[opt], client.s.options[opt], 'must pass options to mongodb')
+      }
+      client.close(() => {
+        t.diagnostic('Client closed')
+      })
+    })
+  })
+
+  // Test subscription expiration after client disconnection
+  test('subscription should expire after client disconnected', (t) => {
+    dbopts.ttl = {
+      subscriptions: 1
+    }
+    dbopts.ttlAfterDisconnected = true
+    const instance = persistence(dbopts)
+    const emitter = mqemitterMongo(dbopts)
+    const client = { id: 'client1' }
+    instance.broker = toBroker('1', emitter)
+    instance.on('ready', () => {
+      instance.addSubscriptions(client, [{
+        topic: 'hello',
+        qos: 1
+      }], (err) => {
+        t.assert.ifError(err)
+        // Check subscription exists without disconnected field
+        db.collection('subscriptions').findOne({ clientId: client.id, topic: 'hello' }, (err, result) => {
+          t.assert.ifError(err)
+          t.assert.notEqual(result, null, 'must return subscription')
+          t.assert.equal(result.disconnected, undefined, 'disconnected should not be set')
+          // Simulate client disconnect
+          instance.broker.emit('clientDisconnect', client)
+          setTimeout(() => {
+            // Check disconnected field is set
+            db.collection('subscriptions').findOne({ clientId: client.id, topic: 'hello' }, (err, result) => {
+              t.assert.ifError(err)
+              t.assert.notEqual(result, null, 'must return subscription')
+              t.assert.notEqual(result.disconnected, undefined, 'disconnected should be set')
+              setTimeout(() => {
+                // Check subscription is removed after TTL
+                db.collection('subscriptions').findOne({ clientId: client.id, topic: 'hello' }, (err, result) => {
+                  t.assert.ifError(err)
+                  t.assert.equal(result, null, 'must not return subscription')
+                  instance.destroy(t.diagnostic('instance dies'))
+                  emitter.close()
+                })
+              }, 3000)
+            })
+          }, 500)
+        })
+      })
+    })
+  })
+
+  // Test handling bulk operations when instance is destroyed
+  test('prevent executing bulk when instance is destroyed', (t) => {
+    cleanDB((err) => {
+      t.assert.ifError(err)
+
+      const emitter = mqemitterMongo(dbopts)
+
+      emitter.status.on('stream', () => {
+        t.diagnostic('mqemitter ready')
+        const instance = persistence(dbopts)
+        instance.broker = toBroker('2', emitter)
+
+        instance.on('ready', () => {
+          t.diagnostic('instance ready')
+
+          const packet = {
+            cmd: 'publish',
+            id: instance.broker.id,
+            topic: 'hello/world',
+            payload: Buffer.from('muahah'),
+            qos: 0,
+            retain: true
+          }
+
+          // Add packet to queue but destroy instance before it's processed
+          instance.packetsQueue.push({ packet, cb: () => { } })
+
+          instance.destroy(() => {
+            t.diagnostic('Instance dies')
+            instance._executeBulk() // should not throw
+            emitter.close()
+          })
+        })
+      })
+    })
+  })
+  sleep(5000).then(() => process.exit(0))
+}
+
+
