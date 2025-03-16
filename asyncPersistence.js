@@ -32,26 +32,28 @@ class AsyncMongoPersistence {
 
   // setup is called by "set broker" in aedes-abstract-persistence
   async setup () {
-    if (this.ready) {
-      // setup is already done
-      return
-    }
     // database already connected
-    if (this._opts.db) {
+    if (this._db) {
       return
     }
 
-    const conn = this._opts.url || 'mongodb://127.0.0.1/aedes'
-    const options = this._opts.mongoOptions
+    // database already provided in the options
+    if (this._opts.db){
+      this._db = this._opts.db
+    } else {
+      // connect to the database
+      const conn = this._opts.url || 'mongodb://127.0.0.1/aedes'
+      const options = this._opts.mongoOptions
 
-    const mongoDBclient = new MongoClient(conn, options)
-    this._mongoDBclient = mongoDBclient
-    const urlParsed = URL.parse(this._opts.url)
-    // skip the first / of the pathname if it exists
-    const pathname = urlParsed.pathname ? urlParsed.pathname.substring(1) : undefined
-    const databaseName = this._opts.database || pathname
-    const db = mongoDBclient.db(databaseName)
-    this._db = db
+      const mongoDBclient = new MongoClient(conn, options)
+      this._mongoDBclient = mongoDBclient
+      const urlParsed = URL.parse(this._opts.url)
+      // skip the first / of the pathname if it exists
+      const pathname = urlParsed.pathname ? urlParsed.pathname.substring(1) : undefined
+      const databaseName = this._opts.database || pathname
+      this._db = mongoDBclient.db(databaseName)
+    }
+    db = this._db
     const subscriptions = db.collection('subscriptions')
     const retained = db.collection('retained')
     const will = db.collection('will')
@@ -295,20 +297,14 @@ class AsyncMongoPersistence {
   }
 
   async destroy () {
-    if (this._destroyed) {
-      throw new Error('destroyed called twice!')
-    }
-
-    this._destroyed = true
     if (this._opts.db) {
       return
     }
-
     await this._mongoDBclient.close()
   }
 
   async outgoingEnqueue (sub, packet) {
-    await this.outgoingEnqueueCombi([sub], packet)
+    return await this.outgoingEnqueueCombi([sub], packet)
   }
 
   async outgoingEnqueueCombi (subs, packet) {
@@ -521,4 +517,4 @@ function promiseWithResolvers () {
   return { promise, resolve: res, reject: rej }
 }
 
-module.exports = (opts) => new AsyncMongoPersistence(opts)
+module.exports = AsyncMongoPersistence
