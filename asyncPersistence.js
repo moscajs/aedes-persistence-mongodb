@@ -1,17 +1,13 @@
-const escape = require('escape-string-regexp')
+const regEscape = require('escape-string-regexp')
 const CachedPersistence = require('aedes-cached-persistence')
 const Packet = CachedPersistence.Packet
-const { MongoClient, Binary } = require('mongodb')
+const { MongoClient } = require('mongodb')
 const { Qlobber } = require('qlobber')
 const qlobberOpts = {
   separator: '/',
   wildcard_one: '+',
   wildcard_some: '#',
   match_empty_levels: true
-}
-
-function toStream (op) {
-  return op.stream ? op.stream() : op
 }
 
 class AsyncMongoPersistence {
@@ -185,21 +181,21 @@ class AsyncMongoPersistence {
 
   async storeRetained (packet) {
     await this.setup()
-    const { promise, resolve, reject } = promiseWithResolve()
+    const { promise, resolve } = promiseWithResolvers()
     const queue = this.retainedBulkQueue
     const filter = { topic: packet.topic }
+    const setTTL = this._opts.ttl.packets
 
     if (packet.payload.length > 0) {
       queue.push({
         operation: {
           updateOne: {
             filter,
-            update: { $set: decoratePacket(packet, this._opts) },
+            update: { $set: decoratePacket(packet, setTTL) },
             upsert: true
           }
         },
-        resolve,
-        reject
+        resolve
       })
     } else {
       queue.push({
@@ -208,8 +204,7 @@ class AsyncMongoPersistence {
             filter
           }
         },
-        resolve,
-        reject
+        resolve
       })
     }
     processRetainedBulk(this)
@@ -220,179 +215,119 @@ class AsyncMongoPersistence {
     return this.createRetainedStreamCombi([pattern])
   }
 
-  createRetainedStreamCombi (patterns) {
-    let regex = []
-
-    const instance = through.obj(filterPattern)
-    instance.matcher = new Qlobber(qlobberOpts)
+  async * createRetainedStreamCombi (patterns) {
+    const regexes = []
+    const matcher = new Qlobber(qlobberOpts)
 
     for (let i = 0; i < patterns.length; i++) {
-      instance.matcher.add(patterns[i], true)
-      regex.push(escape(patterns[i]).replace(/(\/*#|\\\+).*$/, ''))
+      matcher.add(patterns[i], true)
+      regexes.push(regEscape(patterns[i]).replace(/(\/*#|\\\+).*$/, ''))
     }
 
-    regex = regex.join('|')
-
-    return pump(
-      toStream(this._cl.retained.find({
-        topic: new RegExp(regex)
-      })),
-      instance
-    )
+    const topic = new RegExp(regexes.join('|'))
+    const filter = { topic }
+    const exclude = { _id: 0 } // exclude the _id field
+    for await (const result of this._cl.retained.find(filter, exclude)) {
+      const packet = asPacket(result)
+      if (matcher.match(packet.topic).length > 0) {
+        yield packet
+      }
+    }
   }
 
-  addSubscriptions (client, subs, cb) {
-    if (!this.ready) {
-      this.once('ready', this.addSubscriptions.bind(this, client, subs, cb))
-      return
-    }
-
-    let published = 0
-    let errored = false
-    const bulk = this._cl.subscriptions.initializeOrderedBulkOp()
-    subs
-      .forEach((sub) => {
-        const subscription = Object.assign({}, sub)
-        subscription.clientId = client.id
-        bulk.find({
-          clientId: client.id,
-          topic: sub.topic
-        }).upsert().updateOne({
-          $set: decorateSubscription(subscription, this._opts)
-        })
+  async addSubscriptions (client, subs) {
+    const operations = []
+    for (const sub of subs) {
+      const subscription = Object.assign({}, sub)
+      subscription.clientId = client.id
+      operations.push({
+        updateOne: {
+          filter: {
+            clientId: client.id,
+            topic: sub.topic
+          },
+          update: {
+            $set: decorateSubscription(subscription, this._opts)
+          },
+          upsert: true
+        }
       })
-
-    bulk.execute(finish)
-    this._addedSubscriptions(client, subs, finish)
-
-    function finish (err) {
-      errored = err
-      published++
-      if (published === 2) {
-        cb(errored, client)
-      }
     }
+
+    await this._cl.subscriptions.bulkWrite(operations)
   }
 
-  removeSubscriptions (client, subs, cb) {
-    if (!this.ready) {
-      this.once('ready', this.removeSubscriptions.bind(this, client, subs, cb))
-      return
-    }
+  async removeSubscriptions (client, subs) {
+    const operations = []
 
-    let published = 0
-    let errored = false
-    const bulk = this._cl.subscriptions.initializeOrderedBulkOp()
-    subs
-      .forEach((topic) => {
-        bulk.find({
-          clientId: client.id,
-          topic
-        }).deleteOne()
+    for (const topic of subs) {
+      operations.push({
+        deleteOne: {
+          filter: {
+            clientId: client.id,
+            topic
+          }
+        }
       })
-
-    bulk.execute(finish)
-    this._removedSubscriptions(client, subs.map(toSub), finish)
-
-    function finish (err) {
-      if (err && !errored) {
-        errored = true
-        cb(err, client)
-        return
-      }
-      published++
-      if (published === 2 && !errored) {
-        cb(null, client)
-      }
     }
+    await this._cl.subscriptions.bulkWrite(operations)
   }
 
-  subscriptionsByClient (client, cb) {
-    if (!this.ready) {
-      this.once('ready', this.subscriptionsByClient.bind(this, client, cb))
-      return
-    }
-
-    this._cl.subscriptions.find({ clientId: client.id }).toArray((err, subs) => {
-      if (err) {
-        cb(err)
-        return
-      }
-
-      const toReturn = subs.map((sub) => {
-        // remove clientId and _id from sub
-        const { clientId, _id, ...resub } = sub
-        return resub
-      })
-
-      cb(null, toReturn.length > 0 ? toReturn : null, client)
-    })
+  async subscriptionsByClient (client) {
+    const filter = { clientId: client.id }
+    const exclude = { clientId: 0, _id: 0 } // exclude these fields
+    const subs = await this._cl.subscriptions.find(filter, exclude).toArray()
+    return subs
   }
 
-  countOffline (cb) {
-    let clientsCount = 0
-    toStream(this._cl.subscriptions.aggregate([{
-      $group: {
-        _id: '$clientId'
-      }
-    }])).on('data', () => {
-      clientsCount++
-    }).on('end', () => {
-      cb(null, this._trie.subscriptionsCount, clientsCount)
-    }).on('error', cb)
+  async countOffline () {
+    const subscriptionsCount = this._trie.subscriptionsCount
+    const { clientsCount } = await this._cl.subscriptions.aggregate([
+      {
+        $group: {
+          _id: '$clientId',
+          clientsCount: {
+            $count: {}
+          }
+        }
+      }])
+    return { subscriptionsCount, clientsCount }
   }
 
-  destroy (cb) {
-    if (!this.ready) {
-      this.once('ready', this.destroy.bind(this, cb))
-      return
-    }
-
+  async destroy () {
     if (this._destroyed) {
       throw new Error('destroyed called twice!')
     }
 
     this._destroyed = true
-
-    cb = cb || noop
-
     if (this._opts.db) {
-      cb()
-    } else {
-      this._client.close(() => {
-        // swallow err in case of close
-        cb()
-      })
-    }
-  }
-
-  outgoingEnqueue (sub, packet, cb) {
-    this.outgoingEnqueueCombi([sub], packet, cb)
-  }
-
-  outgoingEnqueueCombi (subs, packet, cb) {
-    if (!this.ready) {
-      this.once('ready', this.outgoingEnqueueCombi.bind(this, subs, packet, cb))
       return
     }
 
-    if (!subs || subs.length === 0) {
-      return cb(null, packet)
+    await this._mongoDBclient.close()
+  }
+
+  async outgoingEnqueue (sub, packet) {
+    await this.outgoingEnqueueCombi([sub], packet)
+  }
+
+  async outgoingEnqueueCombi (subs, packet) {
+    if (subs?.length === 0) {
+      return packet
     }
 
-    const newp = new Packet(packet)
-    const opts = this._opts
+    const packets = []
+    const newPacket = new Packet(packet)
+    const setTTL = this._opts.ttl.packets
 
-    function createPacket (sub) {
-      return {
+    for (const sub of subs) {
+      packets.push({
         clientId: sub.clientId,
-        packet: decoratePacket(newp, opts)
-      }
+        packet: decoratePacket(newPacket, setTTL)
+      })
     }
 
-    this._cl.outgoing.insertMany(subs.map(createPacket), (err) => {
-      cb(err, packet)
-    })
+    await this._cl.outgoing.insertMany(packets)
   }
 
   async * outgoingStream (client) {
@@ -401,181 +336,105 @@ class AsyncMongoPersistence {
     }
   }
 
-  outgoingUpdate (client, packet, cb) {
-    if (!this.ready) {
-      this.once('ready', this.outgoingUpdate.bind(this, client, packet, cb))
-      return
-    }
+  async outgoingUpdate (client, packet) {
     if (packet.brokerId) {
-      updateWithMessageId(this._cl, client, packet, cb)
+      await updateWithMessageId(this._cl, client, packet)
     } else {
-      updatePacket(this._cl, client, packet, cb)
+      await updatePacket(this._cl, client, packet)
     }
   }
 
-  outgoingClearMessageId (client, packet, cb) {
-    if (!this.ready) {
-      this.once('ready', this.outgoingClearMessageId.bind(this, client, packet, cb))
-      return
-    }
-
+  async outgoingClearMessageId (client, packet) {
     const outgoing = this._cl.outgoing
 
-    outgoing.findOne({
+    const result = await outgoing.findOneAndDelete({
       clientId: client.id,
       'packet.messageId': packet.messageId
-    }, (err, p) => {
-      if (err) {
-        return cb(err)
-      }
+    })
+    if (!result) {
+      return null // packet not found
+    }
+    return asPacket(result)
+  }
 
-      if (!p) {
-        return cb(null)
-      }
+  async incomingStorePacket (client, packet) {
+    const newPacket = new Packet(packet)
+    newPacket.messageId = packet.messageId
+    const setTTL = this._opts.ttl.packets
 
-      outgoing.deleteOne({
-        clientId: client.id,
-        'packet.messageId': packet.messageId
-      }, (err) => {
-        if (p.packet.payload instanceof Binary) {
-          p.packet.payload = p.packet.payload.buffer
-        }
-        cb(err, p.packet)
-      })
+    await this._cl.incoming.insertOne({
+      clientId: client.id,
+      packet: decoratePacket(newPacket, setTTL)
     })
   }
 
-  incomingStorePacket (client, packet, cb) {
-    if (!this.ready) {
-      this.once('ready', this.incomingStorePacket.bind(this, client, packet, cb))
-      return
-    }
-
-    const newp = new Packet(packet)
-    newp.messageId = packet.messageId
-
-    this._cl.incoming.insertOne({
-      clientId: client.id,
-      packet: decoratePacket(newp, this._opts)
-    }, cb)
-  }
-
-  incomingGetPacket (client, packet, cb) {
-    if (!this.ready) {
-      this.once('ready', this.incomingGetPacket.bind(this, client, packet, cb))
-      return
-    }
-
-    this._cl.incoming.findOne({
+  async incomingGetPacket (client, packet) {
+    const result = await this._cl.incoming.findOne({
       clientId: client.id,
       'packet.messageId': packet.messageId
-    }, (err, result) => {
-      if (err) {
-        cb(err)
-        return
-      }
+    })
 
-      if (!result) {
-        cb(new Error('packet not found'), null, client)
-        return
-      }
+    if (!result) {
+      throw new Error(`packet not found for: ${client}`)
+    }
 
-      const packet = result.packet
+    return asPacket(result)
+  }
 
-      if (packet && packet.payload) {
-        packet.payload = packet.payload.buffer
-      }
-
-      cb(null, packet, client)
+  async incomingDelPacket (client, packet) {
+    await this._cl.incoming.deleteOne({
+      clientId: client.id,
+      'packet.messageId': packet.messageId
     })
   }
 
-  incomingDelPacket (client, packet, cb) {
-    if (!this.ready) {
-      this.once('ready', this.incomingDelPacket.bind(this, client, packet, cb))
-      return
-    }
-
-    this._cl.incoming.deleteOne({
-      clientId: client.id,
-      'packet.messageId': packet.messageId
-    }, cb)
-  }
-
-  putWill (client, packet, cb) {
-    if (!this.ready) {
-      this.once('ready', this.putWill.bind(this, client, packet, cb))
-      return
-    }
-
+  async putWill (client, packet) {
+    const setTTL = this._opts.ttl.packets
     packet.clientId = client.id
     packet.brokerId = this.broker.id
-    this._cl.will.insertOne({
+    await this._cl.will.insertOne({
       clientId: client.id,
-      packet: decoratePacket(packet, this._opts)
-    }, (err) => {
-      cb(err, client)
+      packet: decoratePacket(packet, setTTL)
     })
   }
 
-  getWill (client, cb) {
-    this._cl.will.findOne({
+  async getWill (client) {
+    const result = await this._cl.will.findOne({
       clientId: client.id
-    }, (err, result) => {
-      if (err) {
-        cb(err)
-        return
-      }
-
-      if (!result) {
-        cb(null, null, client)
-        return
-      }
-
-      const packet = result.packet
-
-      if (packet && packet.payload) {
-        packet.payload = packet.payload.buffer
-      }
-
-      cb(null, packet, client)
     })
+    if (!result) {
+      return null // packet not found
+    }
+    return asPacket(result)
   }
 
-  delWill (client, cb) {
-    const will = this._cl.will
-    this.getWill(client, (err, packet) => {
-      if (err || !packet) {
-        cb(err, null, client)
-        return
-      }
-      will.deleteOne({
-        clientId: client.id
-      }, (err) => {
-        cb(err, packet, client)
-      })
+  async delWill (client) {
+    const result = await this._cl.will.findOneAndDelete({
+      clientId: client.id
     })
+    if (!result) {
+      return null // packet not found
+    }
+    return asPacket(result)
   }
 
   async * streamWill (brokers) {
-    const query = {}
+    const filter = {}
 
     if (brokers) {
-      query['packet.brokerId'] = { $nin: Object.keys(brokers) }
+      filter['packet.brokerId'] = { $nin: Object.keys(brokers) }
     }
-    for await (const will of this._cl.will.find(query)) {
+    for await (const will of this._cl.will.find(filter)) {
       yield asPacket(will)
     }
   }
 
   async * getClientList (topic) {
-    const query = {}
-
+    const filter = {}
     if (topic) {
-      query.topic = topic
+      filter.topic = topic
     }
-
-    for await (const sub of this._cl.subscriptions.find(query)) {
+    for await (const sub of this._cl.subscriptions.find(filter)) {
       yield sub.clientId
     }
   }
@@ -602,23 +461,11 @@ async function processRetainedBulk (ctx) {
   }
 }
 
-function decoratePacket (packet, opts) {
-  if (opts.ttl.packets) {
+function decoratePacket (packet, setTTL) {
+  if (setTTL) {
     packet.added = new Date()
   }
   return packet
-}
-
-function filterPattern (chunk, enc, cb) {
-  if (this.matcher.match(chunk.topic).length > 0) {
-    chunk.payload = chunk.payload.buffer
-    // this is converting chunk to slow properties
-    // https://github.com/sindresorhus/to-fast-properties
-    // might make this faster
-    delete chunk._id
-    this.push(chunk)
-  }
-  cb()
 }
 
 function decorateSubscription (sub, opts) {
@@ -628,26 +475,19 @@ function decorateSubscription (sub, opts) {
   return sub
 }
 
-function toSub (topic) {
-  return {
-    topic
-  }
-}
-
 function asPacket (obj) {
   const packet = obj.packet
-
-  if (packet.payload) {
-    const buffer = packet.payload.buffer
-    if (buffer && Buffer.isBuffer(buffer)) {
-      packet.payload = packet.payload.buffer
-    }
+  if (!packet) {
+    throw new Error('Invalid packet')
+  }
+  if (Buffer.isBuffer(packet?.payload?.buffer)) {
+    packet.payload = packet.payload.buffer
   }
   return packet
 }
 
-function updateWithMessageId (db, client, packet, cb) {
-  db.outgoing.updateOne({
+async function updateWithMessageId (db, client, packet) {
+  await db.outgoing.updateOne({
     clientId: client.id,
     'packet.brokerCounter': packet.brokerCounter,
     'packet.brokerId': packet.brokerId
@@ -655,13 +495,11 @@ function updateWithMessageId (db, client, packet, cb) {
     $set: {
       'packet.messageId': packet.messageId
     }
-  }, (err) => {
-    cb(err, client, packet)
   })
 }
 
-function updatePacket (db, client, packet, cb) {
-  db.outgoing.updateOne({
+async function updatePacket (db, client, packet) {
+  await db.outgoing.updateOne({
     clientId: client.id,
     'packet.messageId': packet.messageId
   }, {
@@ -669,21 +507,18 @@ function updatePacket (db, client, packet, cb) {
       clientId: client.id,
       packet
     }
-  }, (err) => {
-    cb(err, client, packet)
   })
 }
 
-function promiseWithResolve () {
+function promiseWithResolvers () {
   // this can be replaced by Promise.withResolvers()in NodeJS >= 22
-  let res, rej
+  let res
+  let rej
   const promise = new Promise((resolve, reject) => {
     res = resolve
     rej = reject
   })
   return { promise, resolve: res, reject: rej }
 }
-
-function noop () { }
 
 module.exports = (opts) => new AsyncMongoPersistence(opts)
