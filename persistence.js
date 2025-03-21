@@ -14,7 +14,7 @@ class MongoPersistence extends CachedPersistence {
     }
     await this.asyncPersistence.setup()
   }
- 
+
   storeRetained (packet, cb) {
     if (!this.ready) {
       this.once('ready', this.storeRetained.bind(this, packet, cb))
@@ -42,7 +42,7 @@ class MongoPersistence extends CachedPersistence {
     const addSubs1 = this.asyncPersistence.addSubscriptions(client, subs)
     // promisify
     const addSubs2 = new Promise((resolve, reject) => {
-      this._addedSubscriptions(client, subs, (err)=>{
+      this._addedSubscriptions(client, subs, (err) => {
         if (err) {
           reject(err)
         } else {
@@ -50,9 +50,9 @@ class MongoPersistence extends CachedPersistence {
         }
       })
     })
-    Promise.all([addSubs1,addSubs2])
-    .then(()=>cb(null,client))
-    .catch(err =>cb(err,client))
+    Promise.all([addSubs1, addSubs2])
+      .then(() => cb(null, client))
+      .catch(err => cb(err, client))
   }
 
   removeSubscriptions (client, subs, cb) {
@@ -64,7 +64,7 @@ class MongoPersistence extends CachedPersistence {
     const remSubs1 = this.asyncPersistence.removeSubscriptions(client, subs)
     // promisify
     const remSubs2 = new Promise((resolve, reject) => {
-      this._removedSubscriptions(client, subs, (err)=>{
+      this._removedSubscriptions(client, subs, (err) => {
         if (err) {
           reject(err)
         } else {
@@ -72,9 +72,9 @@ class MongoPersistence extends CachedPersistence {
         }
       })
     })
-    Promise.all([remSubs1,remSubs2])
-    .then(()=>cb(null,client))
-    .catch(err =>cb(err,client))
+    Promise.all([remSubs1, remSubs2])
+      .then(() => cb(null, client))
+      .catch(err => cb(err, client))
   }
 
   subscriptionsByClient (client, cb) {
@@ -84,14 +84,14 @@ class MongoPersistence extends CachedPersistence {
     }
 
     this.asyncPersistence.subscriptionsByClient(client)
-    .then(results => cb(null, results.length > 0 ? results : null, client))
-    .catch(cb)
+      .then(results => cb(null, results.length > 0 ? results : null, client))
+      .catch(cb)
   }
 
   countOffline (cb) {
     this.asyncPersistence.countOffline()
-    .then(res => cb(null, res.subscriptionsCount, res.clientsCount))
-    .catch(cb)
+      .then(res => cb(null, res.subscriptionsCount, res.clientsCount))
+      .catch(cb)
   }
 
   destroy (cb) {
@@ -109,7 +109,7 @@ class MongoPersistence extends CachedPersistence {
     const finish = cb || noop
 
     this.asyncPersistence.destroy()
-    .finally(finish) // swallow err in case of failure
+      .finally(finish) // swallow err in case of failure
   }
 
   outgoingEnqueue (sub, packet, cb) {
@@ -117,9 +117,9 @@ class MongoPersistence extends CachedPersistence {
       this.once('ready', this.outgoingEnqueue.bind(this, sub, packet, cb))
       return
     }
-    this.asyncPersistence.outgoingEnqueue(sub,packet)
-    .then(()=>cb(packet))
-    .catch(cb)
+    this.asyncPersistence.outgoingEnqueue(sub, packet)
+      .then(() => cb(packet))
+      .catch(cb)
   }
 
   outgoingEnqueueCombi (subs, packet, cb) {
@@ -127,9 +127,9 @@ class MongoPersistence extends CachedPersistence {
       this.once('ready', this.outgoingEnqueueCombi.bind(this, subs, packet, cb))
       return
     }
-    this.asyncPersistence.outgoingEnqueue(subs,packet)
-    .then(()=>cb(packet))
-    .catch(cb)
+    this.asyncPersistence.outgoingEnqueue(subs, packet)
+      .then(() => cb(packet))
+      .catch(cb)
   }
 
   outgoingStream (client) {
@@ -142,8 +142,8 @@ class MongoPersistence extends CachedPersistence {
       return
     }
     this.asyncPersistence.outgoingUpdate(client, packet)
-    .then(()=>cb(null, client, packet))
-    .catch(cb)
+      .then(() => cb(null, client, packet))
+      .catch(cb)
   }
 
   outgoingClearMessageId (client, packet, cb) {
@@ -151,9 +151,9 @@ class MongoPersistence extends CachedPersistence {
       this.once('ready', this.outgoingClearMessageId.bind(this, client, packet, cb))
       return
     }
-    this.asyncPersistence.outgoingClearMessageId(client,packet)
-    .then((packet)=>cb(null, packet))
-    .catch(cb)
+    this.asyncPersistence.outgoingClearMessageId(client, packet)
+      .then((packet) => cb(null, packet))
+      .catch(cb)
   }
 
   incomingStorePacket (client, packet, cb) {
@@ -162,8 +162,8 @@ class MongoPersistence extends CachedPersistence {
       return
     }
     this.asyncPersistence.incomingStorePacket(client, packet)
-    .then(()=>cb(null))
-    .catch(cb)
+      .then(() => cb(null))
+      .catch(cb)
   }
 
   incomingGetPacket (client, packet, cb) {
@@ -172,8 +172,8 @@ class MongoPersistence extends CachedPersistence {
       return
     }
     this.asyncPersistence.incomingGetPacket(client, packet)
-    .then((packet)=>cb(null, packet, client))
-    .catch(cb)
+      .then((packet) => cb(null, packet, client))
+      .catch(cb)
   }
 
   incomingDelPacket (client, packet, cb) {
@@ -182,8 +182,8 @@ class MongoPersistence extends CachedPersistence {
       return
     }
     this.asyncPersistence.incomingDelPacket(client, packet)
-    .then(()=>cb(null))
-    .catch(cb)
+      .then(() => cb(null))
+      .catch(cb)
   }
 
   putWill (client, packet, cb) {
@@ -192,20 +192,20 @@ class MongoPersistence extends CachedPersistence {
       return
     }
     this.asyncPersistence.putWill(client, packet)
-    .then(()=>cb(null, client))
-    .catch(cb)
+      .then(() => cb(null, client))
+      .catch(cb)
   }
 
   getWill (client, cb) {
     this.asyncPersistence.getWill(client)
-    .then((packet)=>cb(null, packet, client ))
-    .catch(cb)
+      .then((packet) => cb(null, packet, client))
+      .catch(cb)
   }
 
   delWill (client, cb) {
     this.asyncPersistence.delWill(client)
-    .then((packet)=>cb(null, packet, client))
-    .catch(cb)
+      .then((packet) => cb(null, packet, client))
+      .catch(cb)
   }
 
   streamWill (brokers) {
@@ -216,3 +216,7 @@ class MongoPersistence extends CachedPersistence {
     return Readable.from(this.asyncPersistence.getClientList(topic))
   }
 }
+
+function noop () {}
+
+module.exports = (opts) => new MongoPersistence(opts)

@@ -38,7 +38,7 @@ class AsyncMongoPersistence {
     }
 
     // database already provided in the options
-    if (this._opts.db){
+    if (this._opts.db) {
       this._db = this._opts.db
     } else {
       // connect to the database
@@ -53,7 +53,7 @@ class AsyncMongoPersistence {
       const databaseName = this._opts.database || pathname
       this._db = mongoDBclient.db(databaseName)
     }
-    db = this._db
+    const db = this._db
     const subscriptions = db.collection('subscriptions')
     const retained = db.collection('retained')
     const will = db.collection('will')
@@ -228,7 +228,7 @@ class AsyncMongoPersistence {
 
     const topic = new RegExp(regexes.join('|'))
     const filter = { topic }
-    const exclude = { _id: 0 } // exclude the _id field
+    const exclude = { _id: false } // exclude the _id field
     for await (const result of this._cl.retained.find(filter, exclude)) {
       const packet = asPacket(result)
       if (matcher.match(packet.topic).length > 0) {
@@ -277,7 +277,7 @@ class AsyncMongoPersistence {
 
   async subscriptionsByClient (client) {
     const filter = { clientId: client.id }
-    const exclude = { clientId: 0, _id: 0 } // exclude these fields
+    const exclude = { clientId: false, _id: false } // exclude these fields
     const subs = await this._cl.subscriptions.find(filter, exclude).toArray()
     return subs
   }
@@ -453,6 +453,7 @@ async function processRetainedBulk (ctx) {
     while (onEnd.length) onEnd.shift().call()
     // check if we have new packets in queue
     ctx.executing = false
+    // do not await as we run this in background and ignore errors
     processRetainedBulk(ctx)
   }
 }
