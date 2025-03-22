@@ -8,11 +8,19 @@ class MongoPersistence extends CachedPersistence {
     this.asyncPersistence = new AsyncPersistence(opts)
   }
 
-  async _setup () {
+  _setup () {
     if (this.ready) {
       return
     }
-    await this.asyncPersistence.setup()
+    this.asyncPersistence.broker = this.broker
+    this.asyncPersistence._trie = this._trie
+    this.asyncPersistence.setup()
+      .then(() => {
+        this.emit('ready')
+      })
+      .catch(err => {
+        this.emit('error', err)
+      })
   }
 
   storeRetained (packet, cb) {
@@ -63,8 +71,9 @@ class MongoPersistence extends CachedPersistence {
 
     const remSubs1 = this.asyncPersistence.removeSubscriptions(client, subs)
     // promisify
+    const mappedSubs = subs.map(sub => { return { topic: sub } })
     const remSubs2 = new Promise((resolve, reject) => {
-      this._removedSubscriptions(client, subs, (err) => {
+      this._removedSubscriptions(client, mappedSubs, (err) => {
         if (err) {
           reject(err)
         } else {
@@ -118,7 +127,7 @@ class MongoPersistence extends CachedPersistence {
       return
     }
     this.asyncPersistence.outgoingEnqueue(sub, packet)
-      .then(() => cb(packet))
+      .then(() => cb(null, packet))
       .catch(cb)
   }
 
@@ -127,8 +136,8 @@ class MongoPersistence extends CachedPersistence {
       this.once('ready', this.outgoingEnqueueCombi.bind(this, subs, packet, cb))
       return
     }
-    this.asyncPersistence.outgoingEnqueue(subs, packet)
-      .then(() => cb(packet))
+    this.asyncPersistence.outgoingEnqueueCombi(subs, packet)
+      .then(() => cb(null, packet))
       .catch(cb)
   }
 

@@ -228,8 +228,8 @@ class AsyncMongoPersistence {
 
     const topic = new RegExp(regexes.join('|'))
     const filter = { topic }
-    const exclude = { _id: false } // exclude the _id field
-    for await (const result of this._cl.retained.find(filter, exclude)) {
+    const exclude = { _id: 0 } // exclude the _id field
+    for await (const result of this._cl.retained.find(filter).project(exclude)) {
       const packet = asPacket(result)
       if (matcher.match(packet.topic).length > 0) {
         yield packet
@@ -278,21 +278,21 @@ class AsyncMongoPersistence {
   async subscriptionsByClient (client) {
     const filter = { clientId: client.id }
     const exclude = { clientId: false, _id: false } // exclude these fields
-    const subs = await this._cl.subscriptions.find(filter, exclude).toArray()
+    const subs = await this._cl.subscriptions.find(filter).project(exclude).toArray()
     return subs
   }
 
   async countOffline () {
     const subscriptionsCount = this._trie.subscriptionsCount
-    const { clientsCount } = await this._cl.subscriptions.aggregate([
+    const result = await this._cl.subscriptions.aggregate([
       {
         $group: {
-          _id: '$clientId',
-          clientsCount: {
-            $count: {}
-          }
+          _id: '$clientId'
         }
-      }])
+      }, {
+        $count: 'clientsCount'
+      }]).toArray()
+    const clientsCount = result[0]?.clientsCount || 0
     return { subscriptionsCount, clientsCount }
   }
 
@@ -473,7 +473,7 @@ function decorateSubscription (sub, opts) {
 }
 
 function asPacket (obj) {
-  const packet = obj.packet
+  const packet = obj?.packet || obj
   if (!packet) {
     throw new Error('Invalid packet')
   }

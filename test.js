@@ -108,11 +108,11 @@ async function destroyInstance (instance) {
   })
 }
 
-async function getEmitter (emitter, dbopts) {
+async function getEmitter (dbopts, emitter) {
   if (emitter) return emitter
-  const myEmitter = emitter || mqemitterMongo(dbopts)
-  await waitForEventOnce(myEmitter.status, 'stream')
-  return myEmitter
+  const mqEmitter = mqemitterMongo(dbopts)
+  await waitForEventOnce(mqEmitter.status, 'stream')
+  return mqEmitter
 }
 
 // end of helpers
@@ -147,11 +147,11 @@ async function doTest () {
   }
 
   function makePersistence (dbopts) {
-    return async function build (cb) {
+    return async function build () {
       await cleanDB()
       const instance = persistence(dbopts)
       // make intance.destroy close the broker as well
-      const oldDestroy = instance.destroy
+      const oldDestroy = instance.destroy.bind(instance)
       instance.destroy = (cb) => {
         oldDestroy(() => {
           instance.broker.mq.close(cb)
@@ -174,12 +174,12 @@ async function doTest () {
   }
 
   async function setUpPersistence (t, id, dbopts, emitter) {
-    const myEmitter = await getEmitter(emitter, dbopts)
+    const mqEmitter = await getEmitter(dbopts, emitter)
     const instance = persistence(dbopts)
-    instance.broker = toBroker(id, myEmitter)
+    instance.broker = toBroker(id, mqEmitter)
     await waitForEventOnce(instance, 'ready')
     t.diagnostic(`instance ${id} created`)
-    return { instance, emitter: myEmitter, id }
+    return { instance, emitter: mqEmitter, id }
   }
 
   async function cleanUpPersistence (t, { instance, emitter, id }) {
@@ -199,6 +199,7 @@ async function doTest () {
       persistence: makePersistence(defaultDBopts),
       waitForReady: true,
     })
+
 
     // and the rest of the tests
     test('multiple persistences', async (t) => {
@@ -579,6 +580,9 @@ async function doTest () {
       await storeRetained(instance, packet)
       t.assert.ok(true, 'should not have thrown')
     })
+    // sleep(5000).then(() => {
+    //   process.exit(0)
+    // })
   }
 }
 doTest()
