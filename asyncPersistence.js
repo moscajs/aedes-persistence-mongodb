@@ -15,11 +15,12 @@ class AsyncMongoPersistence {
     opts.ttl = opts.ttl || {}
 
     if (typeof opts.ttl.packets === 'number') {
+      const ttl = opts.ttl.packets
       opts.ttl.packets = {
-        retained: opts.ttl.packets,
-        will: opts.ttl.packets,
-        outgoing: opts.ttl.packets,
-        incoming: opts.ttl.packets
+        retained: ttl,
+        will: ttl,
+        outgoing: ttl,
+        incoming: ttl
       }
     }
 
@@ -69,8 +70,9 @@ class AsyncMongoPersistence {
 
     // drop existing TTL indexes (if exist)
     if (this._opts.dropExistingIndexes) {
-      for await (const collection of db.collections()) {
-        const exists = collection.indexExists('ttl')
+      const collections = await db.collections()
+      for (const collection of collections) {
+        const exists = await collection.indexExists('ttl')
         if (exists) {
           await collection.dropIndex('ttl')
         }
@@ -447,8 +449,11 @@ async function processRetainedBulk (ctx) {
       operations.push(operation)
       onEnd.push(resolve)
     }
-
-    await ctx._cl.retained.bulkWrite(operations)
+    try {
+      await ctx._cl.retained.bulkWrite(operations)
+    } catch (err) {
+      // ingnore error
+    }
     // resolve all promises
     while (onEnd.length) onEnd.shift().call()
     // check if we have new packets in queue
