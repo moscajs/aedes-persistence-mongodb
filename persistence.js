@@ -1,3 +1,5 @@
+'use strict'
+
 const { Readable } = require('node:stream')
 const CachedPersistence = require('aedes-cached-persistence')
 const AsyncPersistence = require('./asyncPersistence')
@@ -82,7 +84,7 @@ class MongoPersistence extends CachedPersistence {
       })
     })
     Promise.all([remSubs1, remSubs2])
-      .then(() => cb(null, client))
+      .then(() => process.nextTick(cb, null, client))
       .catch(err => cb(err, client))
   }
 
@@ -93,13 +95,13 @@ class MongoPersistence extends CachedPersistence {
     }
 
     this.asyncPersistence.subscriptionsByClient(client)
-      .then(results => cb(null, results.length > 0 ? results : null, client))
+      .then(results => process.nextTick(cb, null, results.length > 0 ? results : null, client))
       .catch(cb)
   }
 
   countOffline (cb) {
     this.asyncPersistence.countOffline()
-      .then(res => cb(null, res.subscriptionsCount, res.clientsCount))
+      .then(res => process.nextTick(cb, null, res.subscriptionsCount, res.clientsCount))
       .catch(cb)
   }
 
@@ -127,7 +129,7 @@ class MongoPersistence extends CachedPersistence {
       return
     }
     this.asyncPersistence.outgoingEnqueue(sub, packet)
-      .then(() => cb(null, packet))
+      .then(() => process.nextTick(cb, null, packet))
       .catch(cb)
   }
 
@@ -137,7 +139,7 @@ class MongoPersistence extends CachedPersistence {
       return
     }
     this.asyncPersistence.outgoingEnqueueCombi(subs, packet)
-      .then(() => cb(null, packet))
+      .then(() => process.nextTick(cb, null, packet))
       .catch(cb)
   }
 

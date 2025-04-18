@@ -1,3 +1,5 @@
+'use strict'
+
 const test = require('node:test')
 const { EventEmitter } = require('node:events')
 const persistence = require('../')

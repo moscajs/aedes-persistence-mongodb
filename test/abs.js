@@ -1,3 +1,5 @@
+'use strict'
+
 const test = require('node:test')
 const persistence = require('../')
 const { MongoClient } = require('mongodb')

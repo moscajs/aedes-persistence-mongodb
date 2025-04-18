@@ -1,3 +1,5 @@
+'use strict'
+
 const regEscape = require('escape-string-regexp')
 const CachedPersistence = require('aedes-cached-persistence')
 const Packet = CachedPersistence.Packet
