@@ -23,7 +23,7 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - name: start mongodb
         run: | 
-          npm run mongodb
+          docker run --name mongodb -p 27017:27017 mongo:8 mongod --setParameter ttlMonitorSleepSecs=2
       - name: get docker logs
         run: |
           docker logs mongodb
@@ -32,7 +32,7 @@ jobs:
         with:
           host: localhost
           port: 27017
-          timeout: 60
+          timeout: 120
       - name: Install
         run: |
           npm install
