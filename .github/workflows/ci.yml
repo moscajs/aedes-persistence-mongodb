@@ -10,7 +10,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false
       matrix:
         node-version: ['20', '22']
 
@@ -24,12 +23,6 @@ jobs:
       - name: start mongodb
         run: | 
           npm run mongodb
-      - name: wait for mongdb
-        uses: MaximeGoyette/wait-for-it-action@master
-        with:
-          host: localhost
-          port: 27017
-          timeout: 120
       - name: Install
         run: |
           npm install
