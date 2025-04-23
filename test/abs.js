@@ -37,6 +37,10 @@ function makePersistence (dbopts, collections) {
 async function doTest () {
   const mongoClient = new MongoClient(mongourl, { w: 1 })
   const db = mongoClient.db(dbname)
+  test('Can connect to MongoDB', async (t) => {
+    await db.admin().ping()
+    t.assert.ok(true, 'Can connect to MongoDB')
+  })
 
   const collections = [
     db.collection('subscriptions'),

@@ -173,6 +173,13 @@ async function doTest () {
     url: mongourl
   }
 
+  test('Can connect to mongoDB', async (t) => {
+    t.plan(1)
+    const { mongoClient } = await createDB()
+    t.assert.ok(mongoClient, 'Can connect to MongoDB')
+    await mongoClient.close()
+  })
+
   test('multiple persistences', async (t) => {
     t.plan(1)
     await cleanDB()
