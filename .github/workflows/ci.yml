@@ -23,7 +23,7 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - name: start mongodb
         run: | 
-          docker run --name mongodb -p 27017:27017 mongo:8 mongod --setParameter ttlMonitorSleepSecs=2
+          docker run -d --name mongodb -p 27017:27017 mongo:8 mongod --setParameter ttlMonitorSleepSecs=2
       - name: get docker logs
         run: |
           docker logs mongodb
