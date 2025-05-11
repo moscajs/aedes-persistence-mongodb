@@ -287,7 +287,7 @@ class AsyncMongoPersistence {
   }
 
   async countOffline () {
-    const subscriptionsCount = this._trie.subscriptionsCount
+    const subsCount = this._trie.subscriptionsCount
     const result = await this._cl.subscriptions.aggregate([
       {
         $group: {
@@ -297,7 +297,7 @@ class AsyncMongoPersistence {
         $count: 'clientsCount'
       }]).toArray()
     const clientsCount = result[0]?.clientsCount || 0
-    return { subscriptionsCount, clientsCount }
+    return { subsCount, clientsCount }
   }
 
   async destroy () {
@@ -451,11 +451,8 @@ async function processRetainedBulk (ctx) {
       operations.push(operation)
       onEnd.push(resolve)
     }
-    try {
-      await ctx._cl.retained.bulkWrite(operations)
-    } catch (err) {
-      // ingnore error
-    }
+    // execute operations and ignore the error
+    await ctx._cl.retained.bulkWrite(operations).catch(() => {})
     // resolve all promises
     while (onEnd.length) onEnd.shift().call()
     // check if we have new packets in queue

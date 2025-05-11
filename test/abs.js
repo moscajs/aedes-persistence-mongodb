@@ -3,8 +3,7 @@
 const test = require('node:test')
 const persistence = require('../')
 const { MongoClient } = require('mongodb')
-// const abs = require('aedes-cached-persistence/abstract')
-const abs = require('../abstract.js')
+const abs = require('aedes-cached-persistence/abstract')
 const mqemitterMongo = require('mqemitter-mongodb')
 const dbname = 'aedes-test'
 const mongourl = `mongodb://127.0.0.1/${dbname}`

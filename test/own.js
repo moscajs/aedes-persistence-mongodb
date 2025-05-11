@@ -1,98 +1,16 @@
 'use strict'
 
 const test = require('node:test')
-const { EventEmitter } = require('node:events')
+const { EventEmitter, once } = require('node:events')
 const persistence = require('../')
 const { MongoClient } = require('mongodb')
 const mqemitterMongo = require('mqemitter-mongodb')
+const { PromisifiedPersistence } = require('aedes-cached-persistence/promisified.js')
 const dbname = 'aedes-test'
 const mongourl = `mongodb://127.0.0.1/${dbname}`
 
 function sleep (msec) {
   return new Promise(resolve => setTimeout(resolve, msec))
-}
-
-function waitForEventOnce (emitter, eventName, errorEvent) {
-  return new Promise((resolve, reject) => {
-    emitter.once(eventName, resolve)
-    if (errorEvent) {
-      emitter.once(errorEvent, reject)
-    }
-  })
-}
-
-// promisified versions of the instance methods
-// to avoid deep callbacks while testing
-async function addSubscriptions (instance, client, subs) {
-  return new Promise((resolve, reject) => {
-    instance.addSubscriptions(client, subs, (err, reClient) => {
-      if (err) {
-        reject(err)
-      } else {
-        resolve(reClient)
-      }
-    })
-  })
-}
-
-async function subscriptionsByTopic (instance, topic) {
-  return new Promise((resolve, reject) => {
-    instance.subscriptionsByTopic(topic, (err, resubs) => {
-      if (err) {
-        reject(err)
-      } else {
-        resolve(resubs)
-      }
-    })
-  })
-}
-
-function storeRetained (instance, packet) {
-  return new Promise((resolve, reject) => {
-    instance.storeRetained(packet, err => {
-      if (err) {
-        reject(err)
-      } else {
-        resolve()
-      }
-    })
-  })
-}
-
-async function incomingStorePacket (instance, client, packet) {
-  return new Promise((resolve, reject) => {
-    instance.incomingStorePacket(client, packet, err => {
-      if (err) {
-        reject(err)
-      } else {
-        resolve()
-      }
-    })
-  })
-}
-
-async function putWill (instance, client, packet) {
-  return new Promise((resolve, reject) => {
-    instance.putWill(client, packet, (err, reClient) => {
-      if (err) {
-        reject(err)
-      } else {
-        resolve(reClient)
-      }
-    })
-  })
-}
-
-async function outgoingEnqueue (instance, sub, packet) {
-  return new Promise((resolve, reject) => {
-    instance.outgoingEnqueue(sub, packet, err => {
-      if (err) {
-        reject(err)
-      } else {
-        resolve()
-      }
-    })
-  })
 }
 
 // helpers
@@ -103,16 +21,10 @@ async function closeEmitter (emitter) {
   })
 }
 
-async function destroyInstance (instance) {
-  return new Promise((resolve) => {
-    instance.destroy(resolve)
-  })
-}
-
 async function getEmitter (dbopts, emitter) {
   if (emitter) return emitter
   const mqEmitter = mqemitterMongo(dbopts)
-  await waitForEventOnce(mqEmitter.status, 'stream')
+  await once(mqEmitter.status, 'stream')
   return mqEmitter
 }
 
@@ -132,11 +44,11 @@ async function createDB () {
 }
 
 function getClient (p) {
-  return p.instance.asyncPersistence._mongoDBclient
+  return p.instance.instance.asyncPersistence._mongoDBclient
 }
 
 function getDB (p) {
-  return p.instance.asyncPersistence._db
+  return p.instance.instance.asyncPersistence._db
 }
 
 function toBroker (id, emitter) {
@@ -155,13 +67,16 @@ async function setUpPersistence (t, id, dbopts, emitter) {
   const mqEmitter = await getEmitter(dbopts, emitter)
   const instance = persistence(dbopts)
   instance.broker = toBroker(id, mqEmitter)
-  await waitForEventOnce(instance, 'ready')
+  if (!instance.ready) {
+    await once(instance, 'ready')
+  }
   t.diagnostic(`instance ${id} created`)
-  return { instance, emitter: mqEmitter, id }
+  const p = new PromisifiedPersistence(instance)
+  return { instance: p, emitter: mqEmitter, id }
 }
 
 async function cleanUpPersistence (t, { instance, emitter, id }) {
-  await destroyInstance(instance)
+  await instance.destroy()
   await closeEmitter(emitter)
   t.diagnostic(`instance ${id} destroyed`)
 }
@@ -199,9 +114,9 @@ async function doTest () {
       qos: 1
     }]
 
-    await addSubscriptions(p1.instance, client, subs)
+    await p1.instance.addSubscriptions(client, subs)
     await sleep(100)
-    const resubs = await subscriptionsByTopic(p2.instance, 'hello')
+    const resubs = await p2.instance.subscriptionsByTopic('hello')
     t.assert.deepEqual(resubs, [{
       clientId: client.id,
       topic: 'hello/#',
@@ -241,9 +156,9 @@ async function doTest () {
       topic: 'matteo',
       qos: 1
     }]
-    await addSubscriptions(p1.instance, client, subs)
+    await p1.instance.addSubscriptions(client, subs)
     await sleep(200)
-    const resubs = await subscriptionsByTopic(p2.instance, 'hello')
+    const resubs = await p2.instance.subscriptionsByTopic('hello')
     t.assert.deepEqual(resubs, [{
       clientId: client.id,
       topic: 'hello/#',
@@ -284,9 +199,9 @@ async function doTest () {
       topic: 'matteo',
       qos: 1
     }]
-    await addSubscriptions(p1.instance, client, subs)
+    await p1.instance.addSubscriptions(client, subs)
     await sleep(100)
-    const resubs = await subscriptionsByTopic(p2.instance, 'hello')
+    const resubs = await p2.instance.subscriptionsByTopic('hello')
     t.assert.deepEqual(resubs, [{
       clientId: client.id,
       topic: 'hello/#',
@@ -316,10 +231,10 @@ async function doTest () {
       topic: 'hello',
       qos: 0
     }]
-    await addSubscriptions(p1.instance, client, subs)
+    await p1.instance.addSubscriptions(client, subs)
     await cleanUpPersistence(t, p1)
     const p2 = await setUpPersistence(t, '2', defaultDBopts, p1.emitter)
-    const resubs = await subscriptionsByTopic(p2.instance, 'hello')
+    const resubs = await p2.instance.subscriptionsByTopic('hello')
     t.assert.deepEqual(resubs, [{
       clientId: 'abcde',
       topic: 'hello',
@@ -418,7 +333,7 @@ async function doTest () {
       retain: true,
       added: date
     }
-    await storeRetained(p1.instance, packet)
+    await p1.instance.storeRetained(packet)
     const db = getDB(p1)
     // exclude _id attribute from result
     const { _id, ...result } = await db.collection('retained').findOne({ topic: 'hello/world' })
@@ -486,10 +401,10 @@ async function doTest () {
 
     const client = { clientId: 'client1' }
 
-    await storeRetained(p1.instance, packet)
-    await incomingStorePacket(p1.instance, client, packet)
-    await outgoingEnqueue(p1.instance, client, packet)
-    await putWill(p1.instance, client, packet)
+    await p1.instance.storeRetained(packet)
+    await p1.instance.incomingStorePacket(client, packet)
+    await p1.instance.outgoingEnqueue(client, packet)
+    await p1.instance.putWill(client, packet)
 
     // wait for delete
     await sleep(4000) // https://docs.mongodb.com/manual/core/index-ttl/#timing-of-the-delete-operation
@@ -536,7 +451,7 @@ async function doTest () {
     const subs = [{ topic: 'hello', qos: 1 }]
 
     const p1 = await setUpPersistence(t, '1', dbopts)
-    await addSubscriptions(p1.instance, client, subs)
+    await p1.instance.addSubscriptions(client, subs)
     const db = getDB(p1)
     const result1 = db.collection('subscriptions').findOne(filter)
     t.assert.notEqual(result1, null, 'must return subscription')
@@ -567,7 +482,7 @@ async function doTest () {
       qos: 0,
       retain: true
     }
-    await storeRetained(instance, packet)
+    await instance.storeRetained(packet)
     t.assert.ok(true, 'should not have thrown')
   })
 }
