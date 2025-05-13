@@ -8,14 +8,8 @@ const mqemitterMongo = require('mqemitter-mongodb')
 const dbname = 'aedes-test'
 const mongourl = `mongodb://127.0.0.1/${dbname}`
 
-function sleep (msec) {
-  return new Promise(resolve => setTimeout(resolve, msec))
-}
-
 async function cleanDB (collections) {
   await Promise.all(collections.map((c) => c.deleteMany({})))
-  // give MongoDB some time to cleanup
-  await sleep(1000)
 }
 
 function makeBuildEmitter (dbopts) {

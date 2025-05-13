@@ -33,8 +33,6 @@ async function cleanDB () {
   const oldDB = mongoClient.db(dbname)
   await oldDB.dropDatabase()
   await mongoClient.close()
-  // give MongoDB some time to cleanup
-  await sleep(1000)
 }
 
 async function createDB () {
