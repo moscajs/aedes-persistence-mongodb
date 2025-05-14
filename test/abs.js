@@ -7,6 +7,11 @@ const abs = require('aedes-cached-persistence/abstract')
 const mqemitterMongo = require('mqemitter-mongodb')
 const dbname = 'aedes-test'
 const mongourl = `mongodb://127.0.0.1/${dbname}`
+const os = require('node:os')
+
+function sleep (msec) {
+  return new Promise(resolve => setTimeout(resolve, msec))
+}
 
 async function cleanDB () {
   const mongoClient = new MongoClient(mongourl, { w: 1 })
@@ -23,6 +28,7 @@ async function cleanDB () {
 
   await Promise.all(collections.map((c) => c.deleteMany({})))
   await mongoClient.close()
+  await sleep(1000)
 }
 
 function makeBuildEmitter (dbopts) {
@@ -48,6 +54,7 @@ function makePersistence (dbopts) {
 }
 // Testing starts here.
 async function doTest () {
+  console.log('os.availableParralelism', os.availableParallelism())
   const defaultDBopts = {
     url: mongourl
   }
