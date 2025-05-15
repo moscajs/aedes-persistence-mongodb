@@ -8,8 +8,21 @@ const mqemitterMongo = require('mqemitter-mongodb')
 const dbname = 'aedes-test'
 const mongourl = `mongodb://127.0.0.1/${dbname}`
 
-async function cleanDB (collections) {
+async function cleanDB () {
+  const mongoClient = new MongoClient(mongourl, { w: 1 })
+  const db = mongoClient.db(dbname)
+  await db.admin().ping()
+
+  const collections = [
+    db.collection('subscriptions'),
+    db.collection('retained'),
+    db.collection('will'),
+    db.collection('outgoing'),
+    db.collection('incoming')
+  ]
+
   await Promise.all(collections.map((c) => c.deleteMany({})))
+  await mongoClient.close()
 }
 
 function makeBuildEmitter (dbopts) {
@@ -19,9 +32,9 @@ function makeBuildEmitter (dbopts) {
   }
 }
 
-function makePersistence (dbopts, collections) {
+function makePersistence (dbopts) {
   return async function build () {
-    await cleanDB(collections)
+    await cleanDB()
     const instance = persistence(dbopts)
     // make intance.destroy close the broker as well
     const oldDestroy = instance.destroy.bind(instance)
@@ -35,21 +48,6 @@ function makePersistence (dbopts, collections) {
 }
 // Testing starts here.
 async function doTest () {
-  const mongoClient = new MongoClient(mongourl, { w: 1 })
-  const db = mongoClient.db(dbname)
-  test('Can connect to MongoDB', async (t) => {
-    await db.admin().ping()
-    t.assert.ok(true, 'Can connect to MongoDB')
-  })
-
-  const collections = [
-    db.collection('subscriptions'),
-    db.collection('retained'),
-    db.collection('will'),
-    db.collection('outgoing'),
-    db.collection('incoming')
-  ]
-
   const defaultDBopts = {
     url: mongourl
   }
@@ -57,12 +55,8 @@ async function doTest () {
   abs({
     test,
     buildEmitter: makeBuildEmitter(defaultDBopts),
-    persistence: makePersistence(defaultDBopts, collections),
+    persistence: makePersistence(defaultDBopts),
     waitForReady: true,
-  })
-
-  test.after(() => {
-    mongoClient.close()
   })
 }
 doTest()
