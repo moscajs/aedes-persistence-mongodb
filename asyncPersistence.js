@@ -1,11 +1,11 @@
 'use strict'
 
 const regEscape = require('escape-string-regexp')
-const CachedPersistence = require('aedes-cached-persistence')
-const Packet = CachedPersistence.Packet
+const Packet = require('aedes-persistence').Packet
 const { MongoClient } = require('mongodb')
 const { Qlobber } = require('qlobber')
-const qlobberOpts = {
+const QlobberSub = require('qlobber/aedes/qlobber-sub')
+const QLOBBER_OPTIONS = {
   separator: '/',
   wildcard_one: '+',
   wildcard_some: '#',
@@ -14,6 +14,8 @@ const qlobberOpts = {
 
 class AsyncMongoPersistence {
   constructor (opts = {}) {
+    this._trie = new QlobberSub(QLOBBER_OPTIONS) // used to match packets
+    this.broadcastSubscriptions = true // allow broadcasting of subscriptions
     opts.ttl = opts.ttl || {}
 
     if (typeof opts.ttl.packets === 'number') {
@@ -223,7 +225,7 @@ class AsyncMongoPersistence {
 
   async * createRetainedStreamCombi (patterns) {
     const regexes = []
-    const matcher = new Qlobber(qlobberOpts)
+    const matcher = new Qlobber(QLOBBER_OPTIONS)
 
     for (let i = 0; i < patterns.length; i++) {
       matcher.add(patterns[i], true)
@@ -305,6 +307,10 @@ class AsyncMongoPersistence {
       return
     }
     await this._mongoDBclient.close()
+  }
+
+  async subscriptionsByTopic (topic) {
+    return this._trie.match(topic)
   }
 
   async outgoingEnqueue (sub, packet) {
