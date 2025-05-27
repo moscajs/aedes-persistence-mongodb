@@ -2,6 +2,7 @@
 
 const regEscape = require('escape-string-regexp')
 const Packet = require('aedes-persistence').Packet
+const BroadcastPersistence = require('aedes-persistence/broadcastPersistence.js')
 const { MongoClient } = require('mongodb')
 const { Qlobber } = require('qlobber')
 const QlobberSub = require('qlobber/aedes/qlobber-sub')
@@ -13,9 +14,12 @@ const QLOBBER_OPTIONS = {
 }
 
 class AsyncMongoPersistence {
+  // private class members start with #
+  #destroyed
+  broker
+
   constructor (opts = {}) {
     this._trie = new QlobberSub(QLOBBER_OPTIONS) // used to match packets
-    this.broadcastSubscriptions = true // allow broadcasting of subscriptions
     opts.ttl = opts.ttl || {}
 
     if (typeof opts.ttl.packets === 'number') {
@@ -35,8 +39,10 @@ class AsyncMongoPersistence {
     this.executing = false // used as lock while a bulk is executing
   }
 
-  // setup is called by "set broker" in aedes-abstract-persistence
-  async setup () {
+  // setup is called by aedes-persistence/callbackPersistence.js
+  async setup (broker) {
+    this.broker = broker
+
     // database already connected
     if (this._db) {
       return
@@ -184,11 +190,13 @@ class AsyncMongoPersistence {
     })) {
       this._trie.add(subscription.topic, subscription)
     }
+    // subscribe to the broker for subscription updates
+    this.broadcast = new BroadcastPersistence(broker, this._trie)
+    await this.broadcast.brokerSubscribe()
     // setup is done
   }
 
   async storeRetained (packet) {
-    await this.setup()
     const { promise, resolve } = promiseWithResolvers()
     const queue = this.retainedBulkQueue
     const filter = { topic: packet.topic }
@@ -245,9 +253,11 @@ class AsyncMongoPersistence {
 
   async addSubscriptions (client, subs) {
     const operations = []
+    const subscriptions = []
     for (const sub of subs) {
       const subscription = Object.assign({}, sub)
       subscription.clientId = client.id
+      subscriptions.push(subscription)
       operations.push({
         updateOne: {
           filter: {
@@ -263,11 +273,12 @@ class AsyncMongoPersistence {
     }
 
     await this._cl.subscriptions.bulkWrite(operations)
+    // inform the broker
+    await this.broadcast.addedSubscriptions(client, subs)
   }
 
   async removeSubscriptions (client, subs) {
     const operations = []
-
     for (const topic of subs) {
       operations.push({
         deleteOne: {
@@ -279,6 +290,8 @@ class AsyncMongoPersistence {
       })
     }
     await this._cl.subscriptions.bulkWrite(operations)
+    // inform the broker
+    await this.broadcast.removedSubscriptions(client, subs)
   }
 
   async subscriptionsByClient (client) {
@@ -303,6 +316,13 @@ class AsyncMongoPersistence {
   }
 
   async destroy () {
+    if (this.#destroyed) {
+      throw new Error('destroyed called twice!')
+    }
+    this.#destroyed = true
+    // stop listening to subscription updates
+    await this.broadcast.brokerUnsubscribe()
+
     if (this._opts.db) {
       return
     }
@@ -311,6 +331,14 @@ class AsyncMongoPersistence {
 
   async subscriptionsByTopic (topic) {
     return this._trie.match(topic)
+  }
+
+  async cleanSubscriptions (client) {
+    const subs = await this.subscriptionsByClient(client)
+    if (subs.length > 0) {
+      const remSubs = subs.map(sub => sub.topic)
+      await this.removeSubscriptions(client, remSubs)
+    }
   }
 
   async outgoingEnqueue (sub, packet) {
