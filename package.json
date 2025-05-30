@@ -60,10 +60,10 @@
     "license-checker": "^25.0.1",
     "mqemitter-mongodb": "^9.0.1",
     "neostandard": "^0.12.1",
-    "release-it": "^19.0.2"
+    "release-it": "^19.0.3"
   },
   "dependencies": {
-    "aedes-cached-persistence": "^10.1.1",
+    "aedes-persistence": "^10.2.0",
     "escape-string-regexp": "^4.0.0",
     "mongodb": "6.16",
     "qlobber": "^8.0.1"

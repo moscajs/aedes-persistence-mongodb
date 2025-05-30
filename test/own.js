@@ -5,7 +5,7 @@ const { EventEmitter, once } = require('node:events')
 const persistence = require('../')
 const { MongoClient } = require('mongodb')
 const mqemitterMongo = require('mqemitter-mongodb')
-const { PromisifiedPersistence } = require('aedes-cached-persistence/promisified.js')
+const { PromisifiedPersistence } = require('aedes-persistence/promisified.js')
 const dbname = 'aedes-test'
 const mongourl = `mongodb://127.0.0.1/${dbname}`
 

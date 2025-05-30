@@ -1,11 +1,12 @@
 'use strict'
 
 const regEscape = require('escape-string-regexp')
-const CachedPersistence = require('aedes-cached-persistence')
-const Packet = CachedPersistence.Packet
+const Packet = require('aedes-persistence').Packet
+const BroadcastPersistence = require('aedes-persistence/broadcastPersistence.js')
 const { MongoClient } = require('mongodb')
 const { Qlobber } = require('qlobber')
-const qlobberOpts = {
+const QlobberSub = require('qlobber/aedes/qlobber-sub')
+const QLOBBER_OPTIONS = {
   separator: '/',
   wildcard_one: '+',
   wildcard_some: '#',
@@ -13,7 +14,20 @@ const qlobberOpts = {
 }
 
 class AsyncMongoPersistence {
+  // private class members start with #
+  #trie
+  #destroyed
+  #broker
+  #opts
+  #db
+  #mongoDBclient
+  #cl
+  #broadcast
+  #retainedBulkQueue
+  #executing
+
   constructor (opts = {}) {
+    this.#trie = new QlobberSub(QLOBBER_OPTIONS) // used to match packets
     opts.ttl = opts.ttl || {}
 
     if (typeof opts.ttl.packets === 'number') {
@@ -26,43 +40,61 @@ class AsyncMongoPersistence {
       }
     }
 
-    this._opts = opts
-    this._db = null
-    this._cl = null
-    this.retainedBulkQueue = [] // used for storing retained packets with ordered bulks
-    this.executing = false // used as lock while a bulk is executing
+    this.#opts = opts
+    this.#db = null
+    this.#cl = null
+    this.#destroyed = false
+    this.#retainedBulkQueue = [] // used for storing retained packets with ordered bulks
+    this.#executing = false // used as lock while a bulk is executing
   }
 
-  // setup is called by "set broker" in aedes-abstract-persistence
-  async setup () {
+  // access #broker, only for testing
+  get broker () {
+    return this.#broker
+  }
+
+  // access #db, only for testing
+  get _db () {
+    return this.#db
+  }
+
+  // access #mongoDBclient, only for testing
+  get _mongoDBclient () {
+    return this.#mongoDBclient
+  }
+
+  // setup is called by aedes-persistence/callbackPersistence.js
+  async setup (broker) {
+    this.#broker = broker
+
     // database already connected
-    if (this._db) {
+    if (this.#db) {
       return
     }
 
     // database already provided in the options
-    if (this._opts.db) {
-      this._db = this._opts.db
+    if (this.#opts.db) {
+      this.#db = this.#opts.db
     } else {
       // connect to the database
-      const conn = this._opts.url || 'mongodb://127.0.0.1/aedes'
-      const options = this._opts.mongoOptions
+      const conn = this.#opts.url || 'mongodb://127.0.0.1/aedes'
+      const options = this.#opts.mongoOptions
 
       const mongoDBclient = new MongoClient(conn, options)
-      this._mongoDBclient = mongoDBclient
-      const urlParsed = URL.parse(this._opts.url)
+      this.#mongoDBclient = mongoDBclient
+      const urlParsed = URL.parse(this.#opts.url)
       // skip the first / of the pathname if it exists
       const pathname = urlParsed.pathname ? urlParsed.pathname.substring(1) : undefined
-      const databaseName = this._opts.database || pathname
-      this._db = mongoDBclient.db(databaseName)
+      const databaseName = this.#opts.database || pathname
+      this.#db = mongoDBclient.db(databaseName)
     }
-    const db = this._db
+    const db = this.#db
     const subscriptions = db.collection('subscriptions')
     const retained = db.collection('retained')
     const will = db.collection('will')
     const outgoing = db.collection('outgoing')
     const incoming = db.collection('incoming')
-    this._cl = {
+    this.#cl = {
       subscriptions,
       retained,
       will,
@@ -71,7 +103,7 @@ class AsyncMongoPersistence {
     }
 
     // drop existing TTL indexes (if exist)
-    if (this._opts.dropExistingIndexes) {
+    if (this.#opts.dropExistingIndexes) {
       const collections = await db.collections()
       for (const collection of collections) {
         const exists = await collection.indexExists('ttl')
@@ -87,7 +119,7 @@ class AsyncMongoPersistence {
       if (typeof idx.expireAfterSeconds === 'number') {
         indexOpts.expireAfterSeconds = idx.expireAfterSeconds
       }
-      await this._cl[idx.collection].createIndex(idx.key, indexOpts)
+      await this.#cl[idx.collection].createIndex(idx.key, indexOpts)
     }
 
     const indexes = [
@@ -113,66 +145,66 @@ class AsyncMongoPersistence {
       }
     ]
 
-    if (this._opts.ttl.subscriptions >= 0) {
+    if (this.#opts.ttl.subscriptions >= 0) {
       indexes.push({
         collection: 'subscriptions',
-        key: this._opts.ttlAfterDisconnected ? 'disconnected' : 'added',
+        key: this.#opts.ttlAfterDisconnected ? 'disconnected' : 'added',
         name: 'ttl',
-        expireAfterSeconds: this._opts.ttl.subscriptions
+        expireAfterSeconds: this.#opts.ttl.subscriptions
       })
     }
 
-    if (this._opts.ttl.packets) {
-      if (this._opts.ttl.packets.retained >= 0) {
+    if (this.#opts.ttl.packets) {
+      if (this.#opts.ttl.packets.retained >= 0) {
         indexes.push({
           collection: 'retained',
           key: 'added',
           name: 'ttl',
-          expireAfterSeconds: this._opts.ttl.packets.retained
+          expireAfterSeconds: this.#opts.ttl.packets.retained
         })
       }
 
-      if (this._opts.ttl.packets.will >= 0) {
+      if (this.#opts.ttl.packets.will >= 0) {
         indexes.push({
           collection: 'will',
           key: 'packet.added',
           name: 'ttl',
-          expireAfterSeconds: this._opts.ttl.packets.will
+          expireAfterSeconds: this.#opts.ttl.packets.will
         })
       }
 
-      if (this._opts.ttl.packets.outgoing >= 0) {
+      if (this.#opts.ttl.packets.outgoing >= 0) {
         indexes.push({
           collection: 'outgoing',
           key: 'packet.added',
           name: 'ttl',
-          expireAfterSeconds: this._opts.ttl.packets.outgoing
+          expireAfterSeconds: this.#opts.ttl.packets.outgoing
         })
       }
 
-      if (this._opts.ttl.packets.incoming >= 0) {
+      if (this.#opts.ttl.packets.incoming >= 0) {
         indexes.push({
           collection: 'incoming',
           key: 'packet.added',
           name: 'ttl',
-          expireAfterSeconds: this._opts.ttl.packets.incoming
+          expireAfterSeconds: this.#opts.ttl.packets.incoming
         })
       }
     }
     // create all indexes in parallel
     await Promise.all(indexes.map(createIndex))
 
-    if (this._opts.ttlAfterDisconnected) {
+    if (this.#opts.ttlAfterDisconnected) {
       // To avoid stale subscriptions that might be left behind by broker shutting
       // down while clients were connected, set all to disconnected on startup.
-      await this._cl.subscriptions.updateMany({ disconnected: { $exists: false } }, { $currentDate: { disconnected: true } })
+      await this.#cl.subscriptions.updateMany({ disconnected: { $exists: false } }, { $currentDate: { disconnected: true } })
 
       // Handlers for setting and clearing the disconnected timestamp on subscriptions
-      this.broker.on('clientReady', (client) => {
-        this._cl.subscriptions.updateMany({ clientId: client.id }, { $unset: { disconnected: true } })
+      this.#broker.on('clientReady', (client) => {
+        this.#cl.subscriptions.updateMany({ clientId: client.id }, { $unset: { disconnected: true } })
       })
-      this.broker.on('clientDisconnect', (client) => {
-        this._cl.subscriptions.updateMany({ clientId: client.id }, { $currentDate: { disconnected: true } })
+      this.#broker.on('clientDisconnect', (client) => {
+        this.#cl.subscriptions.updateMany({ clientId: client.id }, { $currentDate: { disconnected: true } })
       })
     }
 
@@ -180,17 +212,48 @@ class AsyncMongoPersistence {
     for await (const subscription of subscriptions.find({
       qos: { $gte: 0 }
     })) {
-      this._trie.add(subscription.topic, subscription)
+      this.#trie.add(subscription.topic, subscription)
     }
+    // subscribe to the broker for subscription updates
+    this.#broadcast = new BroadcastPersistence(broker, this.#trie)
+    await this.#broadcast.brokerSubscribe()
     // setup is done
   }
 
+  async processRetainedBulk () {
+    if (!this.#executing && !this.#destroyed && this.#retainedBulkQueue.length > 0) {
+      this.#executing = true
+      const operations = []
+      const onEnd = []
+
+      while (this.#retainedBulkQueue.length) {
+        const { operation, resolve } = this.#retainedBulkQueue.shift()
+        operations.push(operation)
+        onEnd.push(resolve)
+      }
+      // execute operations and ignore the error
+      await this.#cl.retained.bulkWrite(operations).catch(() => {})
+      // resolve all promises
+      while (onEnd.length) onEnd.shift().call()
+      // check if we have new packets in queue
+      this.#executing = false
+      // do not await as we run this in background and ignore errors
+      this.processRetainedBulk()
+    }
+    if (this.#destroyed) {
+      // cleanup dangling promises
+      while (this.#retainedBulkQueue.length) {
+        const { resolve } = this.#retainedBulkQueue.shift()
+        resolve() // resolve all promises
+      }
+    }
+  }
+
   async storeRetained (packet) {
-    await this.setup()
     const { promise, resolve } = promiseWithResolvers()
-    const queue = this.retainedBulkQueue
+    const queue = this.#retainedBulkQueue
     const filter = { topic: packet.topic }
-    const setTTL = this._opts.ttl.packets
+    const setTTL = this.#opts.ttl.packets
 
     if (packet.payload.length > 0) {
       queue.push({
@@ -213,7 +276,7 @@ class AsyncMongoPersistence {
         resolve
       })
     }
-    processRetainedBulk(this)
+    this.processRetainedBulk()
     return promise
   }
 
@@ -223,7 +286,7 @@ class AsyncMongoPersistence {
 
   async * createRetainedStreamCombi (patterns) {
     const regexes = []
-    const matcher = new Qlobber(qlobberOpts)
+    const matcher = new Qlobber(QLOBBER_OPTIONS)
 
     for (let i = 0; i < patterns.length; i++) {
       matcher.add(patterns[i], true)
@@ -233,7 +296,7 @@ class AsyncMongoPersistence {
     const topic = new RegExp(regexes.join('|'))
     const filter = { topic }
     const exclude = { _id: 0 } // exclude the _id field
-    for await (const result of this._cl.retained.find(filter).project(exclude)) {
+    for await (const result of this.#cl.retained.find(filter).project(exclude)) {
       const packet = asPacket(result)
       if (matcher.match(packet.topic).length > 0) {
         yield packet
@@ -243,9 +306,11 @@ class AsyncMongoPersistence {
 
   async addSubscriptions (client, subs) {
     const operations = []
+    const subscriptions = []
     for (const sub of subs) {
       const subscription = Object.assign({}, sub)
       subscription.clientId = client.id
+      subscriptions.push(subscription)
       operations.push({
         updateOne: {
           filter: {
@@ -253,19 +318,20 @@ class AsyncMongoPersistence {
             topic: sub.topic
           },
           update: {
-            $set: decorateSubscription(subscription, this._opts)
+            $set: decorateSubscription(subscription, this.#opts)
           },
           upsert: true
         }
       })
     }
 
-    await this._cl.subscriptions.bulkWrite(operations)
+    await this.#cl.subscriptions.bulkWrite(operations)
+    // inform the broker
+    await this.#broadcast.addedSubscriptions(client, subs)
   }
 
   async removeSubscriptions (client, subs) {
     const operations = []
-
     for (const topic of subs) {
       operations.push({
         deleteOne: {
@@ -276,19 +342,21 @@ class AsyncMongoPersistence {
         }
       })
     }
-    await this._cl.subscriptions.bulkWrite(operations)
+    await this.#cl.subscriptions.bulkWrite(operations)
+    // inform the broker
+    await this.#broadcast.removedSubscriptions(client, subs)
   }
 
   async subscriptionsByClient (client) {
     const filter = { clientId: client.id }
     const exclude = { clientId: false, _id: false } // exclude these fields
-    const subs = await this._cl.subscriptions.find(filter).project(exclude).toArray()
+    const subs = await this.#cl.subscriptions.find(filter).project(exclude).toArray()
     return subs
   }
 
   async countOffline () {
-    const subsCount = this._trie.subscriptionsCount
-    const result = await this._cl.subscriptions.aggregate([
+    const subsCount = this.#trie.subscriptionsCount
+    const result = await this.#cl.subscriptions.aggregate([
       {
         $group: {
           _id: '$clientId'
@@ -301,10 +369,29 @@ class AsyncMongoPersistence {
   }
 
   async destroy () {
-    if (this._opts.db) {
+    if (this.#destroyed) {
+      throw new Error('destroyed called twice!')
+    }
+    this.#destroyed = true
+    // stop listening to subscription updates
+    await this.#broadcast.brokerUnsubscribe()
+
+    if (this.#opts.db) {
       return
     }
-    await this._mongoDBclient.close()
+    await this.#mongoDBclient.close()
+  }
+
+  async subscriptionsByTopic (topic) {
+    return this.#trie.match(topic)
+  }
+
+  async cleanSubscriptions (client) {
+    const subs = await this.subscriptionsByClient(client)
+    if (subs.length > 0) {
+      const remSubs = subs.map(sub => sub.topic)
+      await this.removeSubscriptions(client, remSubs)
+    }
   }
 
   async outgoingEnqueue (sub, packet) {
@@ -318,7 +405,7 @@ class AsyncMongoPersistence {
 
     const packets = []
     const newPacket = new Packet(packet)
-    const setTTL = this._opts.ttl.packets
+    const setTTL = this.#opts.ttl.packets
 
     for (const sub of subs) {
       packets.push({
@@ -327,25 +414,25 @@ class AsyncMongoPersistence {
       })
     }
 
-    await this._cl.outgoing.insertMany(packets)
+    await this.#cl.outgoing.insertMany(packets)
   }
 
   async * outgoingStream (client) {
-    for await (const result of this._cl.outgoing.find({ clientId: client.id })) {
+    for await (const result of this.#cl.outgoing.find({ clientId: client.id })) {
       yield asPacket(result)
     }
   }
 
   async outgoingUpdate (client, packet) {
     if (packet.brokerId) {
-      await updateWithMessageId(this._cl, client, packet)
+      await updateWithMessageId(this.#cl, client, packet)
     } else {
-      await updatePacket(this._cl, client, packet)
+      await updatePacket(this.#cl, client, packet)
     }
   }
 
   async outgoingClearMessageId (client, packet) {
-    const outgoing = this._cl.outgoing
+    const outgoing = this.#cl.outgoing
 
     const result = await outgoing.findOneAndDelete({
       clientId: client.id,
@@ -360,16 +447,16 @@ class AsyncMongoPersistence {
   async incomingStorePacket (client, packet) {
     const newPacket = new Packet(packet)
     newPacket.messageId = packet.messageId
-    const setTTL = this._opts.ttl.packets
+    const setTTL = this.#opts.ttl.packets
 
-    await this._cl.incoming.insertOne({
+    await this.#cl.incoming.insertOne({
       clientId: client.id,
       packet: decoratePacket(newPacket, setTTL)
     })
   }
 
   async incomingGetPacket (client, packet) {
-    const result = await this._cl.incoming.findOne({
+    const result = await this.#cl.incoming.findOne({
       clientId: client.id,
       'packet.messageId': packet.messageId
     })
@@ -382,24 +469,24 @@ class AsyncMongoPersistence {
   }
 
   async incomingDelPacket (client, packet) {
-    await this._cl.incoming.deleteOne({
+    await this.#cl.incoming.deleteOne({
       clientId: client.id,
       'packet.messageId': packet.messageId
     })
   }
 
   async putWill (client, packet) {
-    const setTTL = this._opts.ttl.packets
+    const setTTL = this.#opts.ttl.packets
     packet.clientId = client.id
-    packet.brokerId = this.broker.id
-    await this._cl.will.insertOne({
+    packet.brokerId = this.#broker.id
+    await this.#cl.will.insertOne({
       clientId: client.id,
       packet: decoratePacket(packet, setTTL)
     })
   }
 
   async getWill (client) {
-    const result = await this._cl.will.findOne({
+    const result = await this.#cl.will.findOne({
       clientId: client.id
     })
     if (!result) {
@@ -409,7 +496,7 @@ class AsyncMongoPersistence {
   }
 
   async delWill (client) {
-    const result = await this._cl.will.findOneAndDelete({
+    const result = await this.#cl.will.findOneAndDelete({
       clientId: client.id
     })
     if (!result) {
@@ -424,7 +511,7 @@ class AsyncMongoPersistence {
     if (brokers) {
       filter['packet.brokerId'] = { $nin: Object.keys(brokers) }
     }
-    for await (const will of this._cl.will.find(filter)) {
+    for await (const will of this.#cl.will.find(filter)) {
       yield asPacket(will)
     }
   }
@@ -434,31 +521,9 @@ class AsyncMongoPersistence {
     if (topic) {
       filter.topic = topic
     }
-    for await (const sub of this._cl.subscriptions.find(filter)) {
+    for await (const sub of this.#cl.subscriptions.find(filter)) {
       yield sub.clientId
     }
-  }
-}
-
-async function processRetainedBulk (ctx) {
-  if (!ctx.executing && !ctx._destroyed && ctx.retainedBulkQueue.length > 0) {
-    ctx.executing = true
-    const operations = []
-    const onEnd = []
-
-    while (ctx.retainedBulkQueue.length) {
-      const { operation, resolve } = ctx.retainedBulkQueue.shift()
-      operations.push(operation)
-      onEnd.push(resolve)
-    }
-    // execute operations and ignore the error
-    await ctx._cl.retained.bulkWrite(operations).catch(() => {})
-    // resolve all promises
-    while (onEnd.length) onEnd.shift().call()
-    // check if we have new packets in queue
-    ctx.executing = false
-    // do not await as we run this in background and ignore errors
-    processRetainedBulk(ctx)
   }
 }
 
