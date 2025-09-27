@@ -133,7 +133,7 @@ class AsyncMongoPersistence {
       if (typeof idx.expireAfterSeconds === 'number') {
         indexOpts.expireAfterSeconds = idx.expireAfterSeconds
       }
-      await this.#cl[`${collectionPrefix}${idx.collection}`].createIndex(idx.key, indexOpts)
+      await this.#cl[idx.collection].createIndex(idx.key, indexOpts)
     }
 
     const indexes = [
