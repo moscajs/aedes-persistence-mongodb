@@ -72,6 +72,19 @@ class AsyncMongoPersistence {
       return
     }
 
+    // collection names
+    const collectionPrefix = `${this.#opts.prefix || ''}`
+    const collectionNames = Object.entries({
+      subscriptions: 'subscriptions',
+      retained: 'retained',
+      will: 'will',
+      outgoing: 'outgoing',
+      incoming: 'incoming'
+    }).reduce((obj, [key, value]) => {
+      obj[key] = `${collectionPrefix}${value}`
+      return obj
+    }, {})
+
     // database already provided in the options
     if (this.#opts.db) {
       this.#db = this.#opts.db
@@ -89,11 +102,11 @@ class AsyncMongoPersistence {
       this.#db = mongoDBclient.db(databaseName)
     }
     const db = this.#db
-    const subscriptions = db.collection('subscriptions')
-    const retained = db.collection('retained')
-    const will = db.collection('will')
-    const outgoing = db.collection('outgoing')
-    const incoming = db.collection('incoming')
+    const subscriptions = db.collection(collectionNames.subscriptions)
+    const retained = db.collection(collectionNames.retained)
+    const will = db.collection(collectionNames.will)
+    const outgoing = db.collection(collectionNames.outgoing)
+    const incoming = db.collection(collectionNames.incoming)
     this.#cl = {
       subscriptions,
       retained,
@@ -124,22 +137,22 @@ class AsyncMongoPersistence {
 
     const indexes = [
       {
-        collection: 'outgoing',
+        collection: collectionNames.outgoing,
         key: { clientId: 1, 'packet.brokerId': 1, 'packet.brokerCounter': 1 },
         name: 'query_clientId_brokerId'
       },
       {
-        collection: 'outgoing',
+        collection: collectionNames.outgoing,
         key: { clientId: 1, 'packet.messageId': 1 },
         name: 'query_clientId_messageId'
       },
       {
-        collection: 'incoming',
+        collection: collectionNames.incoming,
         key: { clientId: 1, 'packet.brokerId': 1, 'packet.brokerCounter': 1 },
         name: 'query_clientId_brokerId'
       },
       {
-        collection: 'incoming',
+        collection: collectionNames.incoming,
         key: { clientId: 1, 'packet.messageId': 1 },
         name: 'query_clientId_messageId'
       }
@@ -147,7 +160,7 @@ class AsyncMongoPersistence {
 
     if (this.#opts.ttl.subscriptions >= 0) {
       indexes.push({
-        collection: 'subscriptions',
+        collection: collectionNames.subscriptions,
         key: this.#opts.ttlAfterDisconnected ? 'disconnected' : 'added',
         name: 'ttl',
         expireAfterSeconds: this.#opts.ttl.subscriptions
@@ -157,7 +170,7 @@ class AsyncMongoPersistence {
     if (this.#opts.ttl.packets) {
       if (this.#opts.ttl.packets.retained >= 0) {
         indexes.push({
-          collection: 'retained',
+          collection: collectionNames.retained,
           key: 'added',
           name: 'ttl',
           expireAfterSeconds: this.#opts.ttl.packets.retained
@@ -166,7 +179,7 @@ class AsyncMongoPersistence {
 
       if (this.#opts.ttl.packets.will >= 0) {
         indexes.push({
-          collection: 'will',
+          collection: collectionNames.will,
           key: 'packet.added',
           name: 'ttl',
           expireAfterSeconds: this.#opts.ttl.packets.will
@@ -175,7 +188,7 @@ class AsyncMongoPersistence {
 
       if (this.#opts.ttl.packets.outgoing >= 0) {
         indexes.push({
-          collection: 'outgoing',
+          collection: collectionNames.outgoing,
           key: 'packet.added',
           name: 'ttl',
           expireAfterSeconds: this.#opts.ttl.packets.outgoing
@@ -184,7 +197,7 @@ class AsyncMongoPersistence {
 
       if (this.#opts.ttl.packets.incoming >= 0) {
         indexes.push({
-          collection: 'incoming',
+          collection: collectionNames.incoming,
           key: 'packet.added',
           name: 'ttl',
           expireAfterSeconds: this.#opts.ttl.packets.incoming
