@@ -72,19 +72,6 @@ class AsyncMongoPersistence {
       return
     }
 
-    // collection names
-    const collectionPrefix = `${this.#opts.collectionPrefix || ''}`
-    const collectionNames = Object.entries({
-      subscriptions: 'subscriptions',
-      retained: 'retained',
-      will: 'will',
-      outgoing: 'outgoing',
-      incoming: 'incoming'
-    }).reduce((obj, [key, value]) => {
-      obj[key] = `${collectionPrefix}${value}`
-      return obj
-    }, {})
-
     // database already provided in the options
     if (this.#opts.db) {
       this.#db = this.#opts.db
@@ -101,6 +88,20 @@ class AsyncMongoPersistence {
       const databaseName = this.#opts.database || pathname
       this.#db = mongoDBclient.db(databaseName)
     }
+
+    // collection names
+    const collectionPrefix = `${this.#opts.collectionPrefix || ''}`
+    const collectionNames = [
+      'subscriptions',
+      'retained',
+      'will',
+      'outgoing',
+      'incoming'
+    ].reduce((obj, collectionName) => {
+      obj[collectionName] = `${collectionPrefix}${collectionName}`
+      return obj
+    }, {})
+
     const db = this.#db
     const subscriptions = db.collection(collectionNames.subscriptions)
     const retained = db.collection(collectionNames.retained)
@@ -132,27 +133,27 @@ class AsyncMongoPersistence {
       if (typeof idx.expireAfterSeconds === 'number') {
         indexOpts.expireAfterSeconds = idx.expireAfterSeconds
       }
-      await this.#cl[idx.collection].createIndex(idx.key, indexOpts)
+      await this.#cl[`${collectionPrefix}${idx.collection}`].createIndex(idx.key, indexOpts)
     }
 
     const indexes = [
       {
-        collection: collectionNames.outgoing,
+        collection: 'outgoing',
         key: { clientId: 1, 'packet.brokerId': 1, 'packet.brokerCounter': 1 },
         name: 'query_clientId_brokerId'
       },
       {
-        collection: collectionNames.outgoing,
+        collection: 'outgoing',
         key: { clientId: 1, 'packet.messageId': 1 },
         name: 'query_clientId_messageId'
       },
       {
-        collection: collectionNames.incoming,
+        collection: 'incoming',
         key: { clientId: 1, 'packet.brokerId': 1, 'packet.brokerCounter': 1 },
         name: 'query_clientId_brokerId'
       },
       {
-        collection: collectionNames.incoming,
+        collection: 'incoming',
         key: { clientId: 1, 'packet.messageId': 1 },
         name: 'query_clientId_messageId'
       }
@@ -160,7 +161,7 @@ class AsyncMongoPersistence {
 
     if (this.#opts.ttl.subscriptions >= 0) {
       indexes.push({
-        collection: collectionNames.subscriptions,
+        collection: 'subscriptions',
         key: this.#opts.ttlAfterDisconnected ? 'disconnected' : 'added',
         name: 'ttl',
         expireAfterSeconds: this.#opts.ttl.subscriptions
@@ -170,7 +171,7 @@ class AsyncMongoPersistence {
     if (this.#opts.ttl.packets) {
       if (this.#opts.ttl.packets.retained >= 0) {
         indexes.push({
-          collection: collectionNames.retained,
+          collection: 'retained',
           key: 'added',
           name: 'ttl',
           expireAfterSeconds: this.#opts.ttl.packets.retained
@@ -179,7 +180,7 @@ class AsyncMongoPersistence {
 
       if (this.#opts.ttl.packets.will >= 0) {
         indexes.push({
-          collection: collectionNames.will,
+          collection: 'will',
           key: 'packet.added',
           name: 'ttl',
           expireAfterSeconds: this.#opts.ttl.packets.will
@@ -188,7 +189,7 @@ class AsyncMongoPersistence {
 
       if (this.#opts.ttl.packets.outgoing >= 0) {
         indexes.push({
-          collection: collectionNames.outgoing,
+          collection: 'outgoing',
           key: 'packet.added',
           name: 'ttl',
           expireAfterSeconds: this.#opts.ttl.packets.outgoing
@@ -197,7 +198,7 @@ class AsyncMongoPersistence {
 
       if (this.#opts.ttl.packets.incoming >= 0) {
         indexes.push({
-          collection: collectionNames.incoming,
+          collection: 'incoming',
           key: 'packet.added',
           name: 'ttl',
           expireAfterSeconds: this.#opts.ttl.packets.incoming
