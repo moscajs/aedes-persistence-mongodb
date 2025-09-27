@@ -90,7 +90,7 @@ class AsyncMongoPersistence {
     }
 
     // collection names
-    const collectionPrefix = `${this.#opts.collectionPrefix || ''}`
+    const collectionPrefix = this.#opts.collectionPrefix || ''
     const collectionNames = Object.fromEntries(
       [
         'subscriptions',
