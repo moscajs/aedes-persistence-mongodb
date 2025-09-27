@@ -91,16 +91,15 @@ class AsyncMongoPersistence {
 
     // collection names
     const collectionPrefix = `${this.#opts.collectionPrefix || ''}`
-    const collectionNames = [
-      'subscriptions',
-      'retained',
-      'will',
-      'outgoing',
-      'incoming'
-    ].reduce((obj, collectionName) => {
-      obj[collectionName] = `${collectionPrefix}${collectionName}`
-      return obj
-    }, {})
+    const collectionNames = Object.fromEntries(
+      [
+        'subscriptions',
+        'retained',
+        'will',
+        'outgoing',
+        'incoming'
+      ].map(collectionName => [collectionName, `${collectionPrefix}${collectionName}`])
+    )
 
     const db = this.#db
     const subscriptions = db.collection(collectionNames.subscriptions)
