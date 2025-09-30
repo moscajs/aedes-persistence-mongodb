@@ -89,25 +89,14 @@ class AsyncMongoPersistence {
       this.#db = mongoDBclient.db(databaseName)
     }
 
-    // collection names
     const collectionPrefix = `${this.#opts.collectionPrefix || ''}`
-    const collectionNames = [
-      'subscriptions',
-      'retained',
-      'will',
-      'outgoing',
-      'incoming'
-    ].reduce((obj, collectionName) => {
-      obj[collectionName] = `${collectionPrefix}${collectionName}`
-      return obj
-    }, {})
 
     const db = this.#db
-    const subscriptions = db.collection(collectionNames.subscriptions)
-    const retained = db.collection(collectionNames.retained)
-    const will = db.collection(collectionNames.will)
-    const outgoing = db.collection(collectionNames.outgoing)
-    const incoming = db.collection(collectionNames.incoming)
+    const subscriptions = db.collection(`${collectionPrefix}subscriptions`)
+    const retained = db.collection(`${collectionPrefix}retained`)
+    const will = db.collection(`${collectionPrefix}will`)
+    const outgoing = db.collection(`${collectionPrefix}outgoing`)
+    const incoming = db.collection(`${collectionPrefix}incoming`)
     this.#cl = {
       subscriptions,
       retained,
