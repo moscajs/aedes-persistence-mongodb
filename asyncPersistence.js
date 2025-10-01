@@ -88,12 +88,15 @@ class AsyncMongoPersistence {
       const databaseName = this.#opts.database || pathname
       this.#db = mongoDBclient.db(databaseName)
     }
+
+    const collectionPrefix = `${this.#opts.collectionPrefix || ''}`
+
     const db = this.#db
-    const subscriptions = db.collection('subscriptions')
-    const retained = db.collection('retained')
-    const will = db.collection('will')
-    const outgoing = db.collection('outgoing')
-    const incoming = db.collection('incoming')
+    const subscriptions = db.collection(`${collectionPrefix}subscriptions`)
+    const retained = db.collection(`${collectionPrefix}retained`)
+    const will = db.collection(`${collectionPrefix}will`)
+    const outgoing = db.collection(`${collectionPrefix}outgoing`)
+    const incoming = db.collection(`${collectionPrefix}incoming`)
     this.#cl = {
       subscriptions,
       retained,
