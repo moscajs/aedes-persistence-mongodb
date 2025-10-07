@@ -15,22 +15,6 @@
     "release": "read -p 'GITHUB_TOKEN: ' GITHUB_TOKEN && export GITHUB_TOKEN=$GITHUB_TOKEN && release-it --disable-metrics",
     "mongodb": "docker run -d --rm --name mongodb -p 27017:27017 mongo:8.0.9"
   },
-  "release-it": {
-    "github": {
-      "release": true
-    },
-    "git": {
-      "tagName": "v${version}"
-    },
-    "hooks": {
-      "before:init": [
-        "npm run test"
-      ]
-    },
-    "npm": {
-      "publish": true
-    }
-  },
   "precommit": "test",
   "repository": {
     "type": "git",
