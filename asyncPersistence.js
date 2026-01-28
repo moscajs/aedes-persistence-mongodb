@@ -13,6 +13,25 @@ const QLOBBER_OPTIONS = {
   match_empty_levels: true
 }
 
+// Batching limits for retained message pattern queries
+// MongoDB has a BSON document size limit of 16MB, but regex patterns can hit
+// practical compilation/execution limits around 32KB depending on the driver.
+// These conservative values prevent "regular expression is too large" errors
+// while still allowing efficient batch processing of large pattern sets.
+//
+// Research notes:
+// - MongoDB regex size is limited by BSON document size and regex compilation
+// - Practical regex limit in MongoDB is typically around 32KB
+// - After escaping, MQTT wildcards (#, +) are replaced, reducing final regex size
+// - Joining patterns with '|' adds minimal overhead ((n-1) characters)
+//
+// Current values are conservative to ensure compatibility across different
+// MongoDB versions and deployment configurations. They can be increased if needed:
+// - MAX_PATTERNS_PER_BATCH could be 100-200 for most use cases
+// - MAX_TOTAL_PATTERN_LENGTH could be 15000-20000 (still well under 32KB limit)
+const MAX_PATTERNS_PER_BATCH = 50
+const MAX_TOTAL_PATTERN_LENGTH = 5000
+
 class AsyncMongoPersistence {
   // private class members start with #
   #trie
@@ -271,13 +290,6 @@ class AsyncMongoPersistence {
     for (let i = 0; i < patterns.length; i++) {
       matcher.add(patterns[i], true)
     }
-
-    // To avoid MongoDB "regular expression is too large" errors,
-    // we need to batch patterns when they're numerous or long.
-    // MongoDB has a BSON document size limit of ~16MB, but regex patterns
-    // can hit practical limits around 32KB depending on the driver.
-    const MAX_PATTERNS_PER_BATCH = 50
-    const MAX_TOTAL_PATTERN_LENGTH = 5000
 
     // Calculate total pattern length
     const totalLength = patterns.reduce((sum, p) => sum + p.length, 0)
