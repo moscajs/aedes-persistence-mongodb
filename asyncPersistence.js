@@ -13,6 +13,26 @@ const QLOBBER_OPTIONS = {
   match_empty_levels: true
 }
 
+// Batching limits for retained message pattern queries
+// MongoDB has a BSON document size limit of 16MB, but regex patterns hit
+// practical compilation/execution limits around 32KB. These values are tuned
+// to prevent "regular expression is too large" errors while maintaining good
+// query performance.
+//
+// Why two limits?
+// - MAX_TOTAL_PATTERN_LENGTH: Prevents MongoDB regex size errors (~32KB limit)
+//   Cumulative pattern length is tracked to stay well under MongoDB's practical
+//   regex limit, providing a safety margin for regex escaping and construction.
+//
+// - MAX_PATTERNS_PER_BATCH: Optimizes query performance by reducing network overhead
+//   Larger batches mean fewer MongoDB queries, which typically improves performance
+//   more than smaller batches with simpler regex patterns.
+//
+// These values balance safety (preventing regex errors) with performance (minimizing
+// the number of database queries needed to process subscription patterns).
+const MAX_PATTERNS_PER_BATCH = 200
+const MAX_TOTAL_PATTERN_LENGTH = 15000
+
 class AsyncMongoPersistence {
   // private class members start with #
   #trie
@@ -46,6 +66,29 @@ class AsyncMongoPersistence {
     this.#destroyed = false
     this.#retainedBulkQueue = [] // used for storing retained packets with ordered bulks
     this.#executing = false // used as lock while a bulk is executing
+  }
+
+  #addTTLIndexes (indexes) {
+    const addTTLIndex = (collection, key, expireAfterSeconds) => {
+      if (expireAfterSeconds >= 0) {
+        indexes.push({ collection, key, name: 'ttl', expireAfterSeconds })
+      }
+    }
+
+    if (this.#opts.ttl.subscriptions >= 0) {
+      addTTLIndex(
+        'subscriptions',
+        this.#opts.ttlAfterDisconnected ? 'disconnected' : 'added',
+        this.#opts.ttl.subscriptions
+      )
+    }
+
+    if (this.#opts.ttl.packets) {
+      addTTLIndex('retained', 'added', this.#opts.ttl.packets.retained)
+      addTTLIndex('will', 'packet.added', this.#opts.ttl.packets.will)
+      addTTLIndex('outgoing', 'packet.added', this.#opts.ttl.packets.outgoing)
+      addTTLIndex('incoming', 'packet.added', this.#opts.ttl.packets.incoming)
+    }
   }
 
   // access #broker, only for testing
@@ -148,52 +191,8 @@ class AsyncMongoPersistence {
       }
     ]
 
-    if (this.#opts.ttl.subscriptions >= 0) {
-      indexes.push({
-        collection: 'subscriptions',
-        key: this.#opts.ttlAfterDisconnected ? 'disconnected' : 'added',
-        name: 'ttl',
-        expireAfterSeconds: this.#opts.ttl.subscriptions
-      })
-    }
-
-    if (this.#opts.ttl.packets) {
-      if (this.#opts.ttl.packets.retained >= 0) {
-        indexes.push({
-          collection: 'retained',
-          key: 'added',
-          name: 'ttl',
-          expireAfterSeconds: this.#opts.ttl.packets.retained
-        })
-      }
-
-      if (this.#opts.ttl.packets.will >= 0) {
-        indexes.push({
-          collection: 'will',
-          key: 'packet.added',
-          name: 'ttl',
-          expireAfterSeconds: this.#opts.ttl.packets.will
-        })
-      }
-
-      if (this.#opts.ttl.packets.outgoing >= 0) {
-        indexes.push({
-          collection: 'outgoing',
-          key: 'packet.added',
-          name: 'ttl',
-          expireAfterSeconds: this.#opts.ttl.packets.outgoing
-        })
-      }
-
-      if (this.#opts.ttl.packets.incoming >= 0) {
-        indexes.push({
-          collection: 'incoming',
-          key: 'packet.added',
-          name: 'ttl',
-          expireAfterSeconds: this.#opts.ttl.packets.incoming
-        })
-      }
-    }
+    // Add TTL indexes
+    this.#addTTLIndexes(indexes)
     // create all indexes in parallel
     await Promise.all(indexes.map(createIndex))
 
@@ -235,7 +234,7 @@ class AsyncMongoPersistence {
         onEnd.push(resolve)
       }
       // execute operations and ignore the error
-      await this.#cl.retained.bulkWrite(operations).catch(() => {})
+      await this.#cl.retained.bulkWrite(operations).catch(() => { })
       // resolve all promises
       while (onEnd.length) onEnd.shift().call()
       // check if we have new packets in queue
@@ -256,14 +255,13 @@ class AsyncMongoPersistence {
     const { promise, resolve } = promiseWithResolvers()
     const queue = this.#retainedBulkQueue
     const filter = { topic: packet.topic }
-    const setTTL = this.#opts.ttl.packets
 
     if (packet.payload.length > 0) {
       queue.push({
         operation: {
           updateOne: {
             filter,
-            update: { $set: decoratePacket(packet, setTTL) },
+            update: { $set: decoratePacket(packet, this.#opts.ttl.packets) },
             upsert: true
           }
         },
@@ -288,17 +286,84 @@ class AsyncMongoPersistence {
   }
 
   async * createRetainedStreamCombi (patterns) {
-    const regexes = []
     const matcher = new Qlobber(QLOBBER_OPTIONS)
 
     for (let i = 0; i < patterns.length; i++) {
       matcher.add(patterns[i], true)
-      regexes.push(regEscape(patterns[i]).replace(/(\/*#|\\\+).*$/, ''))
     }
+
+    // Calculate total pattern length
+    const totalLength = patterns.reduce((sum, p) => sum + p.length, 0)
+
+    // Determine if we need to batch
+    const needsBatching =
+      patterns.length > MAX_PATTERNS_PER_BATCH ||
+      totalLength > MAX_TOTAL_PATTERN_LENGTH
+
+    if (needsBatching) {
+      // Process patterns in batches to avoid creating regex that's too large
+      // Use dynamic batching based on cumulative length
+      const seenTopics = new Set() // Track yielded packets to avoid duplicates
+      const batches = []
+      let currentBatch = []
+      let currentLength = 0
+
+      for (const pattern of patterns) {
+        const patternLength = pattern.length
+
+        // Edge case: if a single pattern exceeds MAX_TOTAL_PATTERN_LENGTH,
+        // it will be placed in its own batch. This is intentional behavior
+        // to ensure the pattern is still processed (MongoDB will handle it
+        // or fail with a clear error). Very long patterns (>32KB after escaping)
+        // may still cause MongoDB "regular expression is too large" errors.
+
+        // Start a new batch if adding this pattern would exceed limits
+        if (currentBatch.length >= MAX_PATTERNS_PER_BATCH ||
+            (currentLength + patternLength > MAX_TOTAL_PATTERN_LENGTH && currentBatch.length > 0)) {
+          batches.push(currentBatch)
+          currentBatch = []
+          currentLength = 0
+        }
+        currentBatch.push(pattern)
+        currentLength += patternLength
+      }
+      // Add the last batch if not empty
+      if (currentBatch.length > 0) {
+        batches.push(currentBatch)
+      }
+
+      for (const batch of batches) {
+        for await (const packet of this.#queryRetainedByPatterns(batch, matcher)) {
+          // Avoid duplicates across batches
+          if (!seenTopics.has(packet.topic)) {
+            seenTopics.add(packet.topic)
+            yield packet
+          }
+        }
+      }
+    } else {
+      // Original logic for small pattern sets
+      for await (const packet of this.#queryRetainedByPatterns(patterns, matcher)) {
+        yield packet
+      }
+    }
+  }
+
+  async * #queryRetainedByPatterns (patterns, matcher) {
+    // Early return for empty patterns to avoid creating an empty regex
+    // that would match all documents in the collection
+    if (patterns.length === 0) {
+      return
+    }
+
+    const regexes = patterns.map(pattern =>
+      regEscape(pattern).replace(/(\/*#|\\\+).*$/, '')
+    )
 
     const topic = new RegExp(regexes.join('|'))
     const filter = { topic }
-    const exclude = { _id: 0 } // exclude the _id field
+    const exclude = { _id: 0 }
+
     for await (const result of this.#cl.retained.find(filter).project(exclude)) {
       const packet = asPacket(result)
       if (matcher.match(packet.topic).length > 0) {
@@ -308,13 +373,11 @@ class AsyncMongoPersistence {
   }
 
   async addSubscriptions (client, subs) {
-    const operations = []
     const subscriptions = []
-    for (const sub of subs) {
-      const subscription = Object.assign({}, sub)
-      subscription.clientId = client.id
+    const operations = subs.map(sub => {
+      const subscription = { ...sub, clientId: client.id }
       subscriptions.push(subscription)
-      operations.push({
+      return {
         updateOne: {
           filter: {
             clientId: client.id,
@@ -325,8 +388,8 @@ class AsyncMongoPersistence {
           },
           upsert: true
         }
-      })
-    }
+      }
+    })
 
     await this.#cl.subscriptions.bulkWrite(operations)
     // inform the broker
@@ -334,17 +397,14 @@ class AsyncMongoPersistence {
   }
 
   async removeSubscriptions (client, subs) {
-    const operations = []
-    for (const topic of subs) {
-      operations.push({
-        deleteOne: {
-          filter: {
-            clientId: client.id,
-            topic
-          }
+    const operations = subs.map(topic => ({
+      deleteOne: {
+        filter: {
+          clientId: client.id,
+          topic
         }
-      })
-    }
+      }
+    }))
     await this.#cl.subscriptions.bulkWrite(operations)
     // inform the broker
     await this.#broadcast.removedSubscriptions(client, subs)
@@ -406,16 +466,12 @@ class AsyncMongoPersistence {
       return packet
     }
 
-    const packets = []
     const newPacket = new Packet(packet)
-    const setTTL = this.#opts.ttl.packets
-
-    for (const sub of subs) {
-      packets.push({
-        clientId: sub.clientId,
-        packet: decoratePacket(newPacket, setTTL)
-      })
-    }
+    const decoratedPacket = decoratePacket(newPacket, this.#opts.ttl.packets)
+    const packets = subs.map(sub => ({
+      clientId: sub.clientId,
+      packet: decoratedPacket
+    }))
 
     await this.#cl.outgoing.insertMany(packets)
   }
@@ -435,26 +491,20 @@ class AsyncMongoPersistence {
   }
 
   async outgoingClearMessageId (client, packet) {
-    const outgoing = this.#cl.outgoing
-
-    const result = await outgoing.findOneAndDelete({
+    const result = await this.#cl.outgoing.findOneAndDelete({
       clientId: client.id,
       'packet.messageId': packet.messageId
     })
-    if (!result) {
-      return null // packet not found
-    }
-    return asPacket(result)
+    return result ? asPacket(result) : null
   }
 
   async incomingStorePacket (client, packet) {
     const newPacket = new Packet(packet)
     newPacket.messageId = packet.messageId
-    const setTTL = this.#opts.ttl.packets
 
     await this.#cl.incoming.insertOne({
       clientId: client.id,
-      packet: decoratePacket(newPacket, setTTL)
+      packet: decoratePacket(newPacket, this.#opts.ttl.packets)
     })
   }
 
@@ -479,12 +529,11 @@ class AsyncMongoPersistence {
   }
 
   async putWill (client, packet) {
-    const setTTL = this.#opts.ttl.packets
     packet.clientId = client.id
     packet.brokerId = this.#broker.id
     await this.#cl.will.insertOne({
       clientId: client.id,
-      packet: decoratePacket(packet, setTTL)
+      packet: decoratePacket(packet, this.#opts.ttl.packets)
     })
   }
 
