@@ -467,6 +467,229 @@ async function doTest () {
     await cleanUpPersistence(t, p1)
   })
 
+  test('retained messages batching: more than 50 patterns', async (t) => {
+    t.plan(1)
+    await cleanDB()
+    const p1 = await setUpPersistence(t, '1', defaultDBopts)
+
+    // Store 60 retained messages with different topics
+    const topics = []
+    for (let i = 0; i < 60; i++) {
+      const topic = `batch/test/topic${i}`
+      topics.push(topic)
+      await p1.instance.storeRetained({
+        cmd: 'publish',
+        topic,
+        payload: Buffer.from(`message${i}`),
+        qos: 0,
+        retain: true
+      })
+    }
+
+    // Query with 60 patterns (more than MAX_PATTERNS_PER_BATCH = 50)
+    const patterns = topics.map(t => t)
+    const stream = p1.instance.createRetainedStreamCombi(patterns)
+    const results = []
+    for await (const packet of stream) {
+      results.push(packet.topic)
+    }
+
+    t.assert.equal(results.length, 60, 'should retrieve all 60 retained messages')
+    await cleanUpPersistence(t, p1)
+  })
+
+  test('retained messages batching: total length exceeding 5000 characters', async (t) => {
+    t.plan(1)
+    await cleanDB()
+    const p1 = await setUpPersistence(t, '1', defaultDBopts)
+
+    // Create 30 patterns with long topic names (averaging 200 chars = 6000 total)
+    const topics = []
+    for (let i = 0; i < 30; i++) {
+      const topic = `very/long/topic/name/with/many/segments/${i}/${'x'.repeat(150)}`
+      topics.push(topic)
+      await p1.instance.storeRetained({
+        cmd: 'publish',
+        topic,
+        payload: Buffer.from(`message${i}`),
+        qos: 0,
+        retain: true
+      })
+    }
+
+    const patterns = topics.map(t => t)
+    const stream = p1.instance.createRetainedStreamCombi(patterns)
+    const results = []
+    for await (const packet of stream) {
+      results.push(packet.topic)
+    }
+
+    t.assert.equal(results.length, 30, 'should retrieve all 30 retained messages with long topics')
+    await cleanUpPersistence(t, p1)
+  })
+
+  test('retained messages batching: deduplication across batches', async (t) => {
+    t.plan(1)
+    await cleanDB()
+    const p1 = await setUpPersistence(t, '1', defaultDBopts)
+
+    // Store messages that will match multiple patterns
+    await p1.instance.storeRetained({
+      cmd: 'publish',
+      topic: 'sensor/temperature/room1',
+      payload: Buffer.from('22C'),
+      qos: 0,
+      retain: true
+    })
+
+    // Create 60 patterns where some overlap
+    // First 30 patterns will match the topic
+    // Next 30 patterns will also match the same topic
+    const patterns = []
+    for (let i = 0; i < 30; i++) {
+      patterns.push('sensor/temperature/#')
+    }
+    for (let i = 0; i < 30; i++) {
+      patterns.push('sensor/+/room1')
+    }
+
+    const stream = p1.instance.createRetainedStreamCombi(patterns)
+    const results = []
+    for await (const packet of stream) {
+      results.push(packet.topic)
+    }
+
+    // Should only get the packet once despite matching in multiple batches
+    t.assert.equal(results.length, 1, 'should deduplicate packets across batches')
+    await cleanUpPersistence(t, p1)
+  })
+
+  test('retained messages batching: correctness with patterns in multiple batches', async (t) => {
+    t.plan(2)
+    await cleanDB()
+    const p1 = await setUpPersistence(t, '1', defaultDBopts)
+
+    // Store 100 messages across different topic namespaces
+    const expectedTopics = new Set()
+    for (let i = 0; i < 50; i++) {
+      const topic = `namespace1/topic${i}`
+      expectedTopics.add(topic)
+      await p1.instance.storeRetained({
+        cmd: 'publish',
+        topic,
+        payload: Buffer.from(`msg${i}`),
+        qos: 0,
+        retain: true
+      })
+    }
+    for (let i = 0; i < 50; i++) {
+      const topic = `namespace2/topic${i}`
+      expectedTopics.add(topic)
+      await p1.instance.storeRetained({
+        cmd: 'publish',
+        topic,
+        payload: Buffer.from(`msg${i}`),
+        qos: 0,
+        retain: true
+      })
+    }
+
+    // Create patterns that will be split across batches
+    const patterns = []
+    for (let i = 0; i < 50; i++) {
+      patterns.push(`namespace1/topic${i}`)
+    }
+    for (let i = 0; i < 50; i++) {
+      patterns.push(`namespace2/topic${i}`)
+    }
+
+    const stream = p1.instance.createRetainedStreamCombi(patterns)
+    const results = []
+    for await (const packet of stream) {
+      results.push(packet.topic)
+    }
+
+    t.assert.equal(results.length, 100, 'should retrieve all 100 retained messages')
+    // Verify all expected topics are present
+    const resultsSet = new Set(results)
+    const allMatch = [...expectedTopics].every(topic => resultsSet.has(topic))
+    t.assert.ok(allMatch, 'all expected topics should be present')
+    await cleanUpPersistence(t, p1)
+  })
+
+  test('retained messages batching: empty patterns array', async (t) => {
+    t.plan(1)
+    await cleanDB()
+    const p1 = await setUpPersistence(t, '1', defaultDBopts)
+
+    // Store some messages
+    await p1.instance.storeRetained({
+      cmd: 'publish',
+      topic: 'test/topic',
+      payload: Buffer.from('test'),
+      qos: 0,
+      retain: true
+    })
+
+    // Query with empty patterns array
+    const stream = p1.instance.createRetainedStreamCombi([])
+    const results = []
+    for await (const packet of stream) {
+      results.push(packet.topic)
+    }
+
+    t.assert.equal(results.length, 0, 'should return no results for empty patterns')
+    await cleanUpPersistence(t, p1)
+  })
+
+  test('retained messages batching: mixed pattern lengths with dynamic batching', async (t) => {
+    t.plan(1)
+    await cleanDB()
+    const p1 = await setUpPersistence(t, '1', defaultDBopts)
+
+    // Create patterns with varying lengths to test dynamic batch sizing
+    // Mix short and long patterns to trigger batch splits based on length
+    const topics = []
+
+    // Add 10 short topics
+    for (let i = 0; i < 10; i++) {
+      topics.push(`short/${i}`)
+    }
+
+    // Add 20 moderately long topics (each ~300 chars, total ~6000)
+    // This should trigger batching by length even though count < 50
+    for (let i = 0; i < 20; i++) {
+      // Create long but valid topic names with reasonable segment count
+      const longSegment = 'x'.repeat(50)
+      topics.push(`namespace/device/${longSegment}/sensor/${longSegment}/reading/topic${i}`)
+    }
+
+    // Add 10 more short topics
+    for (let i = 10; i < 20; i++) {
+      topics.push(`short/${i}`)
+    }
+
+    // Store retained messages for all topics
+    for (const topic of topics) {
+      await p1.instance.storeRetained({
+        cmd: 'publish',
+        topic,
+        payload: Buffer.from('test'),
+        qos: 0,
+        retain: true
+      })
+    }
+
+    const stream = p1.instance.createRetainedStreamCombi(topics)
+    const results = []
+    for await (const packet of stream) {
+      results.push(packet.topic)
+    }
+
+    t.assert.equal(results.length, 40, 'should retrieve all messages with mixed pattern lengths')
+    await cleanUpPersistence(t, p1)
+  })
+
   test('prevent executing bulk when instance is destroyed', async (t) => {
     t.plan(1)
     await cleanDB()

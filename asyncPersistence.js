@@ -289,12 +289,30 @@ class AsyncMongoPersistence {
 
     if (needsBatching) {
       // Process patterns in batches to avoid creating regex that's too large
-      const batchSize = MAX_PATTERNS_PER_BATCH
+      // Use dynamic batching based on cumulative length
       const seenTopics = new Set() // Track yielded packets to avoid duplicates
+      const batches = []
+      let currentBatch = []
+      let currentLength = 0
 
-      for (let i = 0; i < patterns.length; i += batchSize) {
-        const batch = patterns.slice(i, i + batchSize)
+      for (const pattern of patterns) {
+        const patternLength = pattern.length
+        // Start a new batch if adding this pattern would exceed limits
+        if (currentBatch.length >= MAX_PATTERNS_PER_BATCH ||
+            (currentLength + patternLength > MAX_TOTAL_PATTERN_LENGTH && currentBatch.length > 0)) {
+          batches.push(currentBatch)
+          currentBatch = []
+          currentLength = 0
+        }
+        currentBatch.push(pattern)
+        currentLength += patternLength
+      }
+      // Add the last batch if not empty
+      if (currentBatch.length > 0) {
+        batches.push(currentBatch)
+      }
 
+      for (const batch of batches) {
         for await (const packet of this.#queryRetainedByPatterns(batch, matcher)) {
           // Avoid duplicates across batches
           if (!seenTopics.has(packet.topic)) {
@@ -312,6 +330,12 @@ class AsyncMongoPersistence {
   }
 
   async * #queryRetainedByPatterns (patterns, matcher) {
+    // Early return for empty patterns to avoid creating an empty regex
+    // that would match all documents in the collection
+    if (patterns.length === 0) {
+      return
+    }
+
     const regexes = patterns.map(pattern =>
       regEscape(pattern).replace(/(\/*#|\\\+).*$/, '')
     )
