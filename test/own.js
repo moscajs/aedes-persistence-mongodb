@@ -487,7 +487,7 @@ async function doTest () {
     }
 
     // Query with 60 patterns (more than MAX_PATTERNS_PER_BATCH = 50)
-    const patterns = topics.map(t => t)
+    const patterns = [...topics]
     const stream = p1.instance.createRetainedStreamCombi(patterns)
     const results = []
     for await (const packet of stream) {
@@ -517,7 +517,7 @@ async function doTest () {
       })
     }
 
-    const patterns = topics.map(t => t)
+    const patterns = [...topics]
     const stream = p1.instance.createRetainedStreamCombi(patterns)
     const results = []
     for await (const packet of stream) {
