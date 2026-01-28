@@ -233,7 +233,7 @@ class AsyncMongoPersistence {
         onEnd.push(resolve)
       }
       // execute operations and ignore the error
-      await this.#cl.retained.bulkWrite(operations).catch(() => {})
+      await this.#cl.retained.bulkWrite(operations).catch(() => { })
       // resolve all promises
       while (onEnd.length) onEnd.shift().call()
       // check if we have new packets in queue
@@ -309,6 +309,13 @@ class AsyncMongoPersistence {
 
       for (const pattern of patterns) {
         const patternLength = pattern.length
+
+        // Edge case: if a single pattern exceeds MAX_TOTAL_PATTERN_LENGTH,
+        // it will be placed in its own batch. This is intentional behavior
+        // to ensure the pattern is still processed (MongoDB will handle it
+        // or fail with a clear error). Very long patterns (>32KB after escaping)
+        // may still cause MongoDB "regular expression is too large" errors.
+
         // Start a new batch if adding this pattern would exceed limits
         if (currentBatch.length >= MAX_PATTERNS_PER_BATCH ||
             (currentLength + patternLength > MAX_TOTAL_PATTERN_LENGTH && currentBatch.length > 0)) {
