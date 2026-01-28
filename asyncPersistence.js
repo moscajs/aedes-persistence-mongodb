@@ -14,23 +14,24 @@ const QLOBBER_OPTIONS = {
 }
 
 // Batching limits for retained message pattern queries
-// MongoDB has a BSON document size limit of 16MB, but regex patterns can hit
-// practical compilation/execution limits around 32KB depending on the driver.
-// These conservative values prevent "regular expression is too large" errors
-// while still allowing efficient batch processing of large pattern sets.
+// MongoDB has a BSON document size limit of 16MB, but regex patterns hit
+// practical compilation/execution limits around 32KB. These values are tuned
+// to prevent "regular expression is too large" errors while maintaining good
+// query performance.
 //
-// Research notes:
-// - MongoDB regex size is limited by BSON document size and regex compilation
-// - Practical regex limit in MongoDB is typically around 32KB
-// - After escaping, MQTT wildcards (#, +) are replaced, reducing final regex size
-// - Joining patterns with '|' adds minimal overhead ((n-1) characters)
+// Why two limits?
+// - MAX_TOTAL_PATTERN_LENGTH: Prevents MongoDB regex size errors (~32KB limit)
+//   Cumulative pattern length is tracked to stay well under MongoDB's practical
+//   regex limit, providing a safety margin for regex escaping and construction.
 //
-// Current values are conservative to ensure compatibility across different
-// MongoDB versions and deployment configurations. They can be increased if needed:
-// - MAX_PATTERNS_PER_BATCH could be 100-200 for most use cases
-// - MAX_TOTAL_PATTERN_LENGTH could be 15000-20000 (still well under 32KB limit)
-const MAX_PATTERNS_PER_BATCH = 50
-const MAX_TOTAL_PATTERN_LENGTH = 5000
+// - MAX_PATTERNS_PER_BATCH: Optimizes query performance by reducing network overhead
+//   Larger batches mean fewer MongoDB queries, which typically improves performance
+//   more than smaller batches with simpler regex patterns.
+//
+// These values balance safety (preventing regex errors) with performance (minimizing
+// the number of database queries needed to process subscription patterns).
+const MAX_PATTERNS_PER_BATCH = 200
+const MAX_TOTAL_PATTERN_LENGTH = 15000
 
 class AsyncMongoPersistence {
   // private class members start with #
