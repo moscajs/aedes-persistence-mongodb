@@ -125,7 +125,15 @@ class AsyncMongoPersistence {
 
       const mongoDBclient = new MongoClient(conn, options)
       this.#mongoDBclient = mongoDBclient
-      const urlParsed = URL.parse(this.#opts.url)
+
+      let urlParsed;
+      try {
+        urlParsed = new URL(this.#opts.url);
+      } catch {
+        const { parse } = await import('node:url');
+        urlParsed = parse(this.#opts.url);
+      }
+
       // skip the first / of the pathname if it exists
       const pathname = urlParsed.pathname ? urlParsed.pathname.substring(1) : undefined
       const databaseName = this.#opts.database || pathname
