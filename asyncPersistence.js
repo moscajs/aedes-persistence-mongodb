@@ -165,6 +165,9 @@ class AsyncMongoPersistence {
       if (typeof idx.expireAfterSeconds === 'number') {
         indexOpts.expireAfterSeconds = idx.expireAfterSeconds
       }
+      if (idx.unique) {
+        indexOpts.unique = true
+      }
       await this.#cl[idx.collection].createIndex(idx.key, indexOpts)
     }
 
@@ -188,6 +191,19 @@ class AsyncMongoPersistence {
         collection: 'incoming',
         key: { clientId: 1, 'packet.messageId': 1 },
         name: 'query_clientId_messageId'
+      },
+      {
+        // storeRetained / createRetainedStreamCombi key off `topic`. Without
+        // this index every operation falls back to COLLSCAN; under load
+        // storeRetained's ordered bulkWrite serializes the whole publish
+        // pipeline behind it, stalling broker.publish callbacks by tens of
+        // seconds on deployments with more than a few thousand retained
+        // topics (observed: ~60s uniform lag with 15k retained + 200 msg/s).
+        // Unique matches the {topic}-filtered upsert semantics.
+        collection: 'retained',
+        key: { topic: 1 },
+        name: 'query_topic',
+        unique: true
       }
     ]
 
