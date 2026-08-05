@@ -690,6 +690,96 @@ async function doTest () {
     await cleanUpPersistence(t, p1)
   })
 
+  test('retained messages batching: slash-heavy patterns stay under the MongoDB regex limit', async (t) => {
+    t.plan(3)
+    await cleanDB()
+    const p1 = await setUpPersistence(t, '1', defaultDBopts)
+
+    // 200 filters of 75 chars with 7 slashes each: MongoDB compiles
+    // `RegExp.source`, where every `/` costs an extra `\`, so joining these into
+    // one alternation overshoots the 16384-byte limit (error 51091) even though
+    // their raw length does not.
+    const topics = []
+    for (let i = 0; i < 200; i++) {
+      const leaf = `leaf${i}`.padEnd(28, 'x')
+      topics.push(`regression/slash/heavy/topic/tree/branch/${leaf}/value`)
+    }
+
+    // Guard the fixture: it is only a regression test while it sits in the
+    // regime that used to break.
+    const rawLength = topics.reduce((sum, topic) => sum + topic.length, 0)
+    const joinedLength = new RegExp(topics.join('|')).source.length
+    t.assert.ok(rawLength <= 15000, `raw length ${rawLength} must stay within the old budget`)
+    t.assert.ok(joinedLength > 16384, `joined source ${joinedLength} must exceed the MongoDB limit`)
+
+    for (const topic of topics) {
+      await p1.instance.storeRetained({
+        cmd: 'publish',
+        topic,
+        payload: Buffer.from('test'),
+        qos: 0,
+        retain: true
+      })
+    }
+
+    const stream = p1.instance.createRetainedStreamCombi(topics)
+    const results = []
+    for await (const packet of stream) {
+      results.push(packet.topic)
+    }
+
+    t.assert.equal(results.length, 200, 'should retrieve all slash-heavy retained messages')
+    await cleanUpPersistence(t, p1)
+  })
+
+  test('retained messages batching: exact and wildcard patterns mixed', async (t) => {
+    t.plan(2)
+    await cleanDB()
+    const p1 = await setUpPersistence(t, '1', defaultDBopts)
+
+    const topics = [
+      'mixed/exact/one',
+      'mixed/exact/two',
+      'mixed/tree/branch/leaf',
+      'mixed/tree/branch/other',
+      'mixed/single/a/value',
+      'mixed/untouched/topic'
+    ]
+    for (const topic of topics) {
+      await p1.instance.storeRetained({
+        cmd: 'publish',
+        topic,
+        payload: Buffer.from('test'),
+        qos: 0,
+        retain: true
+      })
+    }
+
+    // 'mixed/tree/branch/leaf' is covered by both the exact filter and
+    // 'mixed/tree/#': the overlap must not yield it twice
+    const stream = p1.instance.createRetainedStreamCombi([
+      'mixed/exact/one',
+      'mixed/tree/#',
+      'mixed/tree/branch/leaf',
+      'mixed/single/+/value',
+      'mixed/exact/two'
+    ])
+    const results = []
+    for await (const packet of stream) {
+      results.push(packet.topic)
+    }
+
+    t.assert.deepStrictEqual(results.sort(), [
+      'mixed/exact/one',
+      'mixed/exact/two',
+      'mixed/single/a/value',
+      'mixed/tree/branch/leaf',
+      'mixed/tree/branch/other'
+    ], 'should retrieve exactly the matching topics')
+    t.assert.equal(new Set(results).size, results.length, 'should not yield duplicates')
+    await cleanUpPersistence(t, p1)
+  })
+
   test('prevent executing bulk when instance is destroyed', async (t) => {
     t.plan(1)
     await cleanDB()

@@ -14,24 +14,22 @@ const QLOBBER_OPTIONS = {
 }
 
 // Batching limits for retained message pattern queries
-// MongoDB has a BSON document size limit of 16MB, but regex patterns hit
-// practical compilation/execution limits around 32KB. These values are tuned
-// to prevent "regular expression is too large" errors while maintaining good
-// query performance.
 //
-// Why two limits?
-// - MAX_TOTAL_PATTERN_LENGTH: Prevents MongoDB regex size errors (~32KB limit)
-//   Cumulative pattern length is tracked to stay well under MongoDB's practical
-//   regex limit, providing a safety margin for regex escaping and construction.
+// MongoDB refuses to compile a regex whose pattern exceeds 16384 bytes:
+//   "Regular expression is invalid: pattern string is longer than the limit
+//    set by the application" (error 51091)
 //
-// - MAX_PATTERNS_PER_BATCH: Optimizes query performance by reducing network overhead
-//   Larger batches mean fewer MongoDB queries, which typically improves performance
-//   more than smaller batches with simpler regex patterns.
+// - MAX_REGEX_SOURCE_LENGTH: budget for the pattern MongoDB actually compiles,
+//   which is `RegExp.source` — NOT the raw subscription filter. V8 escapes every
+//   `/` as `\/` in `source`, and MQTT filters are slash-delimited, so a deep
+//   topic tree inflates ~10% on top of regEscape's own expansions (`-` becomes
+//   `\x2d`, four bytes for one). Budgeting against raw lengths silently
+//   overshoots the 16384 limit; always measure with {@link sourceLength}.
 //
-// These values balance safety (preventing regex errors) with performance (minimizing
-// the number of database queries needed to process subscription patterns).
+// - MAX_PATTERNS_PER_BATCH: caps `$in` size and regex branch count so a client
+//   subscribing to thousands of filters issues bounded queries.
 const MAX_PATTERNS_PER_BATCH = 200
-const MAX_TOTAL_PATTERN_LENGTH = 15000
+const MAX_REGEX_SOURCE_LENGTH = 15000
 
 class AsyncMongoPersistence {
   // private class members start with #
@@ -302,82 +300,36 @@ class AsyncMongoPersistence {
   }
 
   async * createRetainedStreamCombi (patterns) {
+    // Early return for empty patterns to avoid a filter that would match every
+    // document in the collection
+    if (patterns.length === 0) {
+      return
+    }
+
     const matcher = new Qlobber(QLOBBER_OPTIONS)
 
     for (let i = 0; i < patterns.length; i++) {
       matcher.add(patterns[i], true)
     }
 
-    // Calculate total pattern length
-    const totalLength = patterns.reduce((sum, p) => sum + p.length, 0)
+    const filters = buildRetainedFilters(patterns)
+    // A topic can match several filters; only dedupe when that's possible
+    const seenTopics = filters.length > 1 ? new Set() : null
 
-    // Determine if we need to batch
-    const needsBatching =
-      patterns.length > MAX_PATTERNS_PER_BATCH ||
-      totalLength > MAX_TOTAL_PATTERN_LENGTH
-
-    if (needsBatching) {
-      // Process patterns in batches to avoid creating regex that's too large
-      // Use dynamic batching based on cumulative length
-      const seenTopics = new Set() // Track yielded packets to avoid duplicates
-      const batches = []
-      let currentBatch = []
-      let currentLength = 0
-
-      for (const pattern of patterns) {
-        const patternLength = pattern.length
-
-        // Edge case: if a single pattern exceeds MAX_TOTAL_PATTERN_LENGTH,
-        // it will be placed in its own batch. This is intentional behavior
-        // to ensure the pattern is still processed (MongoDB will handle it
-        // or fail with a clear error). Very long patterns (>32KB after escaping)
-        // may still cause MongoDB "regular expression is too large" errors.
-
-        // Start a new batch if adding this pattern would exceed limits
-        if (currentBatch.length >= MAX_PATTERNS_PER_BATCH ||
-            (currentLength + patternLength > MAX_TOTAL_PATTERN_LENGTH && currentBatch.length > 0)) {
-          batches.push(currentBatch)
-          currentBatch = []
-          currentLength = 0
-        }
-        currentBatch.push(pattern)
-        currentLength += patternLength
-      }
-      // Add the last batch if not empty
-      if (currentBatch.length > 0) {
-        batches.push(currentBatch)
-      }
-
-      for (const batch of batches) {
-        for await (const packet of this.#queryRetainedByPatterns(batch, matcher)) {
-          // Avoid duplicates across batches
-          if (!seenTopics.has(packet.topic)) {
-            seenTopics.add(packet.topic)
-            yield packet
+    for (const filter of filters) {
+      for await (const packet of this.#queryRetained(filter, matcher)) {
+        if (seenTopics) {
+          if (seenTopics.has(packet.topic)) {
+            continue
           }
+          seenTopics.add(packet.topic)
         }
-      }
-    } else {
-      // Original logic for small pattern sets
-      for await (const packet of this.#queryRetainedByPatterns(patterns, matcher)) {
         yield packet
       }
     }
   }
 
-  async * #queryRetainedByPatterns (patterns, matcher) {
-    // Early return for empty patterns to avoid creating an empty regex
-    // that would match all documents in the collection
-    if (patterns.length === 0) {
-      return
-    }
-
-    const regexes = patterns.map(pattern =>
-      regEscape(pattern).replace(/(\/*#|\\\+).*$/, '')
-    )
-
-    const topic = new RegExp(regexes.join('|'))
-    const filter = { topic }
+  async * #queryRetained (filter, matcher) {
     const exclude = { _id: 0 }
 
     for await (const result of this.#cl.retained.find(filter).project(exclude)) {
@@ -593,6 +545,81 @@ class AsyncMongoPersistence {
       yield sub.clientId
     }
   }
+}
+
+// The pattern MongoDB compiles is `RegExp.source`, which escapes characters the
+// raw filter does not (notably `/` as `\/`). Measure what the server receives.
+function sourceLength (pattern) {
+  return new RegExp(pattern).source.length
+}
+
+// Literal prefix a topic must start with to have any chance of matching this
+// filter. `#` also matches the parent level (`a/b` matches `a/b/#`), so trailing
+// slashes are dropped. Returns '' when the filter can match any topic.
+function literalPrefix (filter) {
+  const wildcard = filter.search(/[#+]/)
+  if (wildcard === -1) {
+    return filter
+  }
+  const prefix = filter.slice(0, wildcard)
+  return filter[wildcard] === '#' ? prefix.replace(/\/+$/, '') : prefix
+}
+
+// Anchored branch for one prefix, guaranteed to fit the budget on its own:
+// escaping can quadruple a character (`-` becomes `\x2d`), so an oversized
+// prefix is truncated. The regex only pre-filters — `matcher.match` decides the
+// real matches — so a shorter prefix stays correct, it just yields more
+// candidates to filter out.
+function prefixBranch (prefix) {
+  const maxRaw = Math.floor(MAX_REGEX_SOURCE_LENGTH / 4)
+  return `^${regEscape(prefix.length > maxRaw ? prefix.slice(0, maxRaw) : prefix)}`
+}
+
+// Query filters covering `patterns`, each small enough for MongoDB to compile.
+// Filters without a wildcard go through `$in`, wildcard filters become
+// `^`-anchored prefixes: both keep the `topic` index scan bounded, where an
+// unanchored alternation has to walk the whole index.
+function buildRetainedFilters (patterns) {
+  const exact = []
+  const prefixes = []
+
+  for (const pattern of patterns) {
+    const prefix = literalPrefix(pattern)
+    if (prefix === '') {
+      return [{}] // matches every topic, narrowing it further buys nothing
+    }
+    if (prefix === pattern) {
+      exact.push(pattern)
+    } else {
+      prefixes.push(prefix)
+    }
+  }
+
+  const filters = []
+
+  for (let i = 0; i < exact.length; i += MAX_PATTERNS_PER_BATCH) {
+    filters.push({ topic: { $in: exact.slice(i, i + MAX_PATTERNS_PER_BATCH) } })
+  }
+
+  let branches = []
+  let length = 0
+  for (const prefix of prefixes) {
+    const branch = prefixBranch(prefix)
+    const cost = sourceLength(branch) + 1 // + the `|` that joins it to the batch
+    if (branches.length >= MAX_PATTERNS_PER_BATCH ||
+        (length + cost > MAX_REGEX_SOURCE_LENGTH && branches.length > 0)) {
+      filters.push({ topic: new RegExp(branches.join('|')) })
+      branches = []
+      length = 0
+    }
+    branches.push(branch)
+    length += cost
+  }
+  if (branches.length > 0) {
+    filters.push({ topic: new RegExp(branches.join('|')) })
+  }
+
+  return filters
 }
 
 function decoratePacket (packet, setTTL) {
