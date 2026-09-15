@@ -544,6 +544,13 @@ class AsyncMongoPersistence {
     })
   }
 
+  async cleanIncoming (client) {
+    // one delete-by-client: both incoming indexes are clientId-prefixed
+    await this.#cl.incoming.deleteMany({
+      clientId: client.id
+    })
+  }
+
   async putWill (client, packet) {
     packet.clientId = client.id
     packet.brokerId = this.#broker.id
