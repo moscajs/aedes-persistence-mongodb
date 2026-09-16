@@ -47,7 +47,7 @@
     "release-it": "^19.0.3"
   },
   "dependencies": {
-    "aedes-persistence": "^10.2.2",
+    "aedes-persistence": "^11.0.0",
     "escape-string-regexp": "^4.0.0",
     "mongodb": "6.17",
     "qlobber": "^8.0.1"

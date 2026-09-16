@@ -420,6 +420,44 @@ async function doTest () {
     await cleanUpPersistence(t, p1)
   })
 
+  test('cleanIncoming only clears the incoming collection', async (t) => {
+    t.plan(6)
+    await cleanDB()
+    const p1 = await setUpPersistence(t, '1', defaultDBopts)
+    const client = { id: 'client1' }
+    const other = { id: 'client2' }
+    const packet = {
+      cmd: 'publish',
+      id: p1.instance.broker.id,
+      topic: 'hello/world',
+      payload: Buffer.from('muahah'),
+      qos: 2,
+      retain: true,
+      messageId: 42
+    }
+
+    await p1.instance.incomingStorePacket(client, packet)
+    await p1.instance.incomingStorePacket(other, packet)
+    await p1.instance.outgoingEnqueue({ clientId: client.id }, packet)
+    await p1.instance.putWill(client, packet)
+    await p1.instance.storeRetained(packet)
+    await p1.instance.addSubscriptions(client, [{ topic: 'hello/world', qos: 1 }])
+
+    await p1.instance.cleanIncoming(client)
+
+    const db = getDB(p1)
+    const count = (collection, filter = { clientId: client.id }) =>
+      db.collection(collection).countDocuments(filter)
+
+    t.assert.equal(await count('incoming'), 0, 'incoming must be cleared')
+    t.assert.equal(await count('incoming', { clientId: other.id }), 1, 'other clients must not be touched')
+    t.assert.equal(await count('outgoing'), 1, 'outgoing must be kept')
+    t.assert.equal(await count('will'), 1, 'will must be kept')
+    t.assert.equal(await count('subscriptions'), 1, 'subscriptions must be kept')
+    t.assert.equal(await count('retained', {}), 1, 'retained must be kept')
+    await cleanUpPersistence(t, p1)
+  })
+
   test('should pass mongoOptions to mongodb driver', async (t) => {
     t.plan(1)
 
