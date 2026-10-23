@@ -35,6 +35,12 @@ async function cleanDB () {
   await mongoClient.close()
 }
 
+async function createDBWithIndexes (collection, indexSpecs) {
+  const { mongoClient, db } = await createDB()
+  await db.collection(collection).createIndexes(indexSpecs)
+  await mongoClient.close()
+}
+
 async function createDB () {
   await cleanDB()
   const mongoClient = new MongoClient(mongourl, { w: 1 })
@@ -73,6 +79,27 @@ async function setUpPersistence (t, id, dbopts, emitter) {
   t.diagnostic(`instance ${id} created`)
   const p = new PromisifiedPersistence(instance)
   return { instance: p, emitter: mqEmitter, id }
+}
+
+// setUpPersistence waits for 'ready', so a setup expected to fail is driven here
+async function setUpPersistenceError (dbopts) {
+  const mqEmitter = await getEmitter(dbopts)
+  const instance = persistence(dbopts)
+  instance.broker = toBroker('1', mqEmitter)
+  const err = await Promise.race([
+    once(instance, 'error').then(([err]) => err),
+    once(instance, 'ready').then(() => null)
+  ])
+  if (err) {
+    // setup failed, so destroy() has nothing to tear down: close the client
+    await instance.asyncPersistence._mongoDBclient.close()
+  } else {
+    await new PromisifiedPersistence(instance).destroy()
+  }
+  await closeEmitter(mqEmitter)
+  // drop the conflicting index, so it cannot fail the setup of later tests
+  await cleanDB()
+  return err
 }
 
 async function cleanUpPersistence (t, { instance, emitter, id }) {
@@ -309,6 +336,51 @@ async function doTest () {
     t.assert.deepEqual(expectedBrokerIdx, brokerIdIndex2.key, 'must return the index key')
 
     await cleanUpPersistence(t, p1)
+  })
+
+  test('keep an equivalent index created under another name', async (t) => {
+    t.plan(3)
+    // same key and options as query_topic, under MongoDB's default name
+    await createDBWithIndexes('retained', [{ key: { topic: 1 }, unique: true }])
+
+    const p1 = await setUpPersistence(t, '1', defaultDBopts)
+    const indexes = await getDB(p1).collection('retained').indexInformation({ full: true })
+    const kept = indexes.find(index => index.name === 'topic_1')
+    t.assert.ok(kept, 'must keep the existing index')
+    t.assert.equal(kept.unique, true, 'must keep a unique index')
+    t.assert.ok(!indexes.some(index => index.name === 'query_topic'), 'must not create a duplicate index')
+    await cleanUpPersistence(t, p1)
+  })
+
+  test('fail on an index conflict with another expiry', async (t) => {
+    t.plan(1)
+    // same key as the retained ttl index, but another expiry
+    await createDBWithIndexes('retained', [{ key: { added: 1 }, expireAfterSeconds: 60 }])
+    const dbopts = structuredClone(defaultDBopts)
+    // only on retained, so no other ttl index is still being built when the next test starts
+    dbopts.ttl = { packets: { retained: 30 } }
+    const err = await setUpPersistenceError(dbopts)
+    t.assert.equal(err?.code, 85, 'must report the IndexOptionsConflict')
+  })
+
+  test('fail on an index conflict with other options', async (t) => {
+    t.plan(1)
+    // same key as query_topic, but hidden from the query planner
+    await createDBWithIndexes('retained', [{ key: { topic: 1 }, unique: true, hidden: true }])
+    const err = await setUpPersistenceError(defaultDBopts)
+    t.assert.equal(err?.code, 85, 'must report the IndexOptionsConflict')
+  })
+
+  test('fail on an index conflict when only a reversed key matches', async (t) => {
+    t.plan(1)
+    await createDBWithIndexes('outgoing', [
+      // same options as query_clientId_messageId, but the key in another order
+      { key: { 'packet.messageId': 1, clientId: 1 } },
+      // same key as query_clientId_messageId, but hidden from the query planner
+      { key: { clientId: 1, 'packet.messageId': 1 }, name: 'by_hand', hidden: true }
+    ])
+    const err = await setUpPersistenceError(defaultDBopts)
+    t.assert.equal(err?.code, 85, 'must report the IndexOptionsConflict')
   })
 
   test('look up for packet with added property', async (t) => {
